@@ -1,3 +1,6 @@
+﻿import fs from "fs";
+
+const content = `
 import * as THREE from "three";
 import CameraControls from "camera-controls";
 import studio from "@theatre/studio";
@@ -31,7 +34,9 @@ function createModeToggle(root: HTMLElement, theatreStudio: any) {
       button.textContent = "Author Mode";
       document.body.classList.add("record-mode");
     } else {
-      window.location.reload();
+      theatreStudio.ui.show();
+      button.textContent = "Record Mode";
+      document.body.classList.remove("record-mode");
     }
   };
 
@@ -78,37 +83,21 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   createRecordingControls(root, renderer.domElement);
   createModeToggle(root, theatreStudio);
 
-  const gltf = await loadGLB("/assets/astronomy/spacecraft/iss/iss.glb");
+  const gltf = await loadGLB("/assets/astronomy/spacecraft/astronaut.glb");
   console.log("GLTF loaded:", gltf);
 
-  const assetRoot = new THREE.Group();
-  assetRoot.name = "ISSRoot";
-
   const loadedObject = gltf.scene;
-  loadedObject.name = "ISS";
+  loadedObject.name = "Astronaut";
 
-  const box = new THREE.Box3().setFromObject(loadedObject);
-  const center = new THREE.Vector3();
-  const size = new THREE.Vector3();
+  fitObjectToView(loadedObject, camera);
+  scene.add(loadedObject);
 
-  box.getCenter(center);
-  box.getSize(size);
-
-  loadedObject.position.sub(center);
-
-  const maxSize = Math.max(size.x, size.y, size.z);
-  const fitScale = maxSize > 0 ? 3 / maxSize : 1;
-  loadedObject.scale.setScalar(fitScale);
-
-  assetRoot.add(loadedObject);
-  scene.add(assetRoot);
-
-  controls.setLookAt(0, 1.5, 7, 0, 0, 0, false);
+  controls.setLookAt(0, 2.2, 7, 0, 0, 0, false);
 
   const project = getProject("Dehlero");
   const sheet = project.sheet("Main Scene");
 
-  const theatreObject = sheet.object("ISS", {
+  const theatreObject = sheet.object("Astronaut", {
     positionX: 0,
     positionY: 0,
     positionZ: 0,
@@ -117,14 +106,14 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   });
 
   theatreObject.onValuesChange((values) => {
-    assetRoot.position.set(
+    loadedObject.position.set(
       values.positionX,
       values.positionY,
       values.positionZ
     );
 
-    assetRoot.rotation.y = values.rotationY;
-    assetRoot.scale.setScalar(values.scale);
+    loadedObject.rotation.y = values.rotationY;
+    loadedObject.scale.setScalar(values.scale);
   });
 
   function resize() {
@@ -160,3 +149,8 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
     loadedObject,
   };
 }
+`;
+
+fs.writeFileSync("src/app/createStudioApp.ts", content.trimStart(), "utf8");
+
+console.log("createStudioApp.ts replaced with Astronaut GLB version.");
