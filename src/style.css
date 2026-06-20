@@ -130,3 +130,53 @@ canvas {
   font-size: 11px;
   line-height: 1.35;
 }
+.lighting-panel {
+  position: fixed;
+  z-index: 10;
+  right: 16px;
+  top: 580px;
+  width: 230px;
+  color: white;
+  background: rgba(15, 18, 30, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 12px;
+  backdrop-filter: blur(10px);
+}
+
+.lighting-panel h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lighting-panel label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.lighting-panel input[type="range"] {
+  width: 100%;
+}
+
+.lighting-buttons {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.lighting-panel button {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 7px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.lighting-panel button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
