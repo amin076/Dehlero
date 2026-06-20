@@ -1,3 +1,6 @@
+﻿import fs from "fs";
+
+const content = `
 import * as THREE from "three";
 import CameraControls from "camera-controls";
 import studio from "@theatre/studio";
@@ -9,10 +12,11 @@ import { createStudioCamera } from "../engine/camera/createStudioCamera";
 import { createLightingRig } from "../engine/lighting/createLightingRig";
 import { createSafeAreaOverlay } from "../studio/overlays/createSafeAreaOverlay";
 import { createRecordingControls } from "../studio/recording/createRecordingControls";
+import { createCameraPanel } from "../studio/controls/createCameraPanel";
+import { createLightingPanel } from "../studio/controls/createLightingPanel";
 
 CameraControls.install({ THREE });
-const theatreStudio = (studio as any).default ?? studio;
-theatreStudio.initialize();
+studio.initialize();
 
 export function createStudioApp({ root }: { root: HTMLDivElement }) {
   root.innerHTML = "";
@@ -33,6 +37,8 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   const lighting = createLightingRig(scene);
   createSafeAreaOverlay(root);
   createRecordingControls(root, renderer.domElement);
+  createCameraPanel({ root, camera, controls });
+  createLightingPanel(root, lighting);
 
   const testObject = new THREE.Mesh(
     new THREE.BoxGeometry(2, 2, 2),
@@ -97,3 +103,8 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     sheet,
   };
 }
+`;
+
+fs.writeFileSync("src/app/createStudioApp.ts", content.trimStart(), "utf8");
+
+console.log("Theatre.js connected to Dehlero.");
