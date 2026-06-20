@@ -70,3 +70,63 @@ canvas {
   opacity: 0.45;
   cursor: not-allowed;
 }
+.camera-panel {
+  position: fixed;
+  z-index: 10;
+  right: 16px;
+  top: 16px;
+  width: 230px;
+  color: white;
+  background: rgba(15, 18, 30, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 12px;
+  backdrop-filter: blur(10px);
+}
+
+.camera-panel h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.camera-panel label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.camera-panel input[type="range"] {
+  width: 100%;
+}
+
+.camera-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.camera-panel button {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 7px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.camera-panel button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.camera-panel pre {
+  margin: 12px 0 0;
+  padding: 8px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 11px;
+  line-height: 1.35;
+}

@@ -1,3 +1,6 @@
+﻿import fs from "fs";
+
+const content = `
 import * as THREE from "three";
 import CameraControls from "camera-controls";
 
@@ -76,3 +79,8 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     controls,
   };
 }
+`;
+
+fs.writeFileSync("src/app/createStudioApp.ts", content.trimStart(), "utf8");
+
+console.log("createStudioApp.ts fixed.");
