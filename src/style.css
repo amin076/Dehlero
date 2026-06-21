@@ -180,3 +180,43 @@ canvas {
 .lighting-panel button:hover {
   background: rgba(255, 255, 255, 0.14);
 }
+.mode-toggle {
+  position: fixed;
+  z-index: 20;
+  left: 16px;
+  top: 58px;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+  background: rgba(15,18,30,0.9);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.record-mode .safe-area-frame span {
+  display: none;
+}
+.trailer-controls {
+  position: fixed;
+  left: 16px;
+  top: 64px;
+
+  z-index: 20;
+
+  display: flex;
+  gap: 8px;
+}
+
+.trailer-controls button {
+  background: rgba(15, 18, 30, 0.9);
+
+  color: white;
+
+  border: 1px solid rgba(255,255,255,0.2);
+
+  border-radius: 8px;
+
+  padding: 8px 12px;
+
+  cursor: pointer;
+}
