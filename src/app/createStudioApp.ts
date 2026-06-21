@@ -50,66 +50,84 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
 
   const titanTrailer = createTitanWorldCup3026Scene(scene);
 
-  camera.position.set(0, 4.2, 18);
-  camera.lookAt(0, 1, -10);
-  controls.setLookAt(0, 4.2, 18, 0, 1, -10, false);
-
   const project = getProject("Dehlero");
   const sheet = project.sheet("Titan World Cup 3026");
 
-  function updateCamera(t: number) {
-    if (t < 6) {
-      const k = t / 6;
-      controls.setLookAt(
-        THREE.MathUtils.lerp(0, -3.5, k),
-        THREE.MathUtils.lerp(4.2, 2.2, k),
-        THREE.MathUtils.lerp(18, 9, k),
-        THREE.MathUtils.lerp(0, -2, k),
-        0.5,
-        THREE.MathUtils.lerp(-10, 0, k),
-        false,
-      );
-      camera.fov = THREE.MathUtils.lerp(46, 36, k);
-    } else if (t < 16) {
-      const k = (t - 6) / 10;
-      controls.setLookAt(
-        THREE.MathUtils.lerp(-3.5, 5.5, k),
-        THREE.MathUtils.lerp(2.2, 3.8, k),
-        THREE.MathUtils.lerp(9, -8, k),
-        titanTrailer.ball.position.x,
-        titanTrailer.ball.position.y,
-        titanTrailer.ball.position.z,
-        false,
-      );
-      camera.fov = THREE.MathUtils.lerp(36, 30, k);
-    } else if (t < 24) {
-      const k = (t - 16) / 8;
-      controls.setLookAt(
-        THREE.MathUtils.lerp(5.5, 0, k),
-        THREE.MathUtils.lerp(3.8, 6.5, k),
-        THREE.MathUtils.lerp(-8, 20, k),
-        THREE.MathUtils.lerp(titanTrailer.ball.position.x, 8, k),
-        THREE.MathUtils.lerp(titanTrailer.ball.position.y, 3, k),
-        THREE.MathUtils.lerp(titanTrailer.ball.position.z, -28, k),
-        false,
-      );
-      camera.fov = THREE.MathUtils.lerp(30, 38, k);
-    } else {
-      const k = Math.min((t - 24) / 6, 1);
-      controls.setLookAt(
-        THREE.MathUtils.lerp(0, 0, k),
-        THREE.MathUtils.lerp(6.5, 7.5, k),
-        THREE.MathUtils.lerp(20, 24, k),
-        0,
-        5,
-        -22,
-        false,
-      );
-      camera.fov = THREE.MathUtils.lerp(38, 34, k);
-    }
+  (sheet.sequence as any).pointer.length = 30;
 
+  const cameraObj = sheet.object("Camera", {
+    position: {
+      x: 0,
+      y: 4.2,
+      z: 18,
+    },
+    target: {
+      x: 0,
+      y: 1,
+      z: -10,
+    },
+    fov: 36,
+  });
+
+  cameraObj.onValuesChange((v) => {
+    controls.setLookAt(
+      v.position.x,
+      v.position.y,
+      v.position.z,
+      v.target.x,
+      v.target.y,
+      v.target.z,
+      false,
+    );
+
+    camera.fov = v.fov;
     camera.updateProjectionMatrix();
+  });
+
+  function playTrailer(iterationCount: number) {
+    sheet.sequence.position = 0;
+    sheet.sequence.play({ iterationCount });
   }
+
+  function resetTrailer() {
+    sheet.sequence.position = 0;
+  }
+
+  function createTrailerControls() {
+    const panel = document.createElement("div");
+    panel.className = "trailer-controls";
+
+    panel.innerHTML = `
+      <button id="trailer-reset">Reset</button>
+      <button id="trailer-play">Play Trailer</button>
+      <button id="trailer-loop">Loop</button>
+    `;
+
+    root.appendChild(panel);
+
+    panel.querySelector<HTMLButtonElement>("#trailer-reset")!.onclick =
+      resetTrailer;
+
+    panel.querySelector<HTMLButtonElement>("#trailer-play")!.onclick = () => {
+      playTrailer(1);
+    };
+
+    panel.querySelector<HTMLButtonElement>("#trailer-loop")!.onclick = () => {
+      playTrailer(Infinity);
+    };
+  }
+
+  createTrailerControls();
+
+  (window as any).dehlero = {
+    sheet,
+    play: () => playTrailer(1),
+    loop: () => playTrailer(Infinity),
+    reset: resetTrailer,
+    jump: (t: number) => {
+      sheet.sequence.position = t;
+    },
+  };
 
   function resize() {
     const width = window.innerWidth;
@@ -117,7 +135,6 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
 
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-
     renderer.setSize(width, height);
   }
 
@@ -125,10 +142,9 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     requestAnimationFrame(animate);
 
     const delta = clock.getDelta();
-    const elapsed = clock.getElapsedTime();
+    const trailerTime = sheet.sequence.position;
 
-    titanTrailer.update(elapsed);
-    updateCamera(elapsed);
+    titanTrailer.update(trailerTime);
 
     controls.update(delta);
     renderer.render(scene, camera);

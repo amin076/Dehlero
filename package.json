@@ -9,13 +9,17 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/three": "^0.184.1",
     "typescript": "~6.0.2",
     "vite": "^8.0.12"
   },
   "dependencies": {
+    "@gltf-transform/core": "^4.4.0",
+    "@gltf-transform/functions": "^4.4.0",
     "@theatre/core": "^0.7.2",
     "@theatre/studio": "^0.7.2",
     "camera-controls": "^3.1.0",
+    "postprocessing": "^6.39.1",
     "three": "^0.184.0",
     "tweakpane": "^4.0.5"
   }
