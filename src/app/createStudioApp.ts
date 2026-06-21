@@ -3,61 +3,20 @@ import CameraControls from "camera-controls";
 import studio from "@theatre/studio";
 import { getProject } from "@theatre/core";
 
-import { loadGLB } from "../assets/core/loadGLB";
 import { createRenderer } from "../engine/renderer/createRenderer";
 import { createScene } from "../engine/scene/createScene";
 import { createStudioCamera } from "../engine/camera/createStudioCamera";
 import { createLightingRig } from "../engine/lighting/createLightingRig";
 import { createSafeAreaOverlay } from "../studio/overlays/createSafeAreaOverlay";
 import { createRecordingControls } from "../studio/recording/createRecordingControls";
+import { createTitanWorldCup3026Scene } from "../scenes/titanWorldCup3026/createTitanWorldCup3026Scene";
 
 CameraControls.install({ THREE });
 
 const theatreStudio = (studio as any).default ?? studio;
 theatreStudio.initialize();
 
-function createModeToggle(root: HTMLElement, theatreStudio: any) {
-  const button = document.createElement("button");
-  button.className = "mode-toggle";
-  button.textContent = "Record Mode";
-
-  let recordMode = false;
-
-  button.onclick = () => {
-    recordMode = !recordMode;
-
-    if (recordMode) {
-      theatreStudio.ui.hide();
-      button.textContent = "Author Mode";
-      document.body.classList.add("record-mode");
-    } else {
-      window.location.reload();
-    }
-  };
-
-  root.appendChild(button);
-}
-
-function fitObjectToView(object: THREE.Object3D, camera: THREE.PerspectiveCamera) {
-  const box = new THREE.Box3().setFromObject(object);
-  const size = new THREE.Vector3();
-  const center = new THREE.Vector3();
-
-  box.getSize(size);
-  box.getCenter(center);
-
-  object.position.sub(center);
-
-  const maxSize = Math.max(size.x, size.y, size.z);
-  const scale = maxSize > 0 ? 3 / maxSize : 1;
-
-  object.scale.multiplyScalar(scale);
-
-  camera.position.set(0, 2.2, 7);
-  camera.lookAt(0, 0, 0);
-}
-
-export async function createStudioApp({ root }: { root: HTMLDivElement }) {
+export function createStudioApp({ root }: { root: HTMLDivElement }) {
   root.innerHTML = "";
 
   const viewport = document.createElement("div");
@@ -74,58 +33,83 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   const controls = new CameraControls(camera, renderer.domElement);
 
   createLightingRig(scene);
+
+  const hemiLight = new THREE.HemisphereLight("#d28a45", "#21100a", 1.8);
+  scene.add(hemiLight);
+
+  const sunLight = new THREE.DirectionalLight("#ffd2a0", 3.2);
+  sunLight.position.set(-12, 18, 10);
+  scene.add(sunLight);
+
+  const rimLight = new THREE.DirectionalLight("#ff9d4d", 1.6);
+  rimLight.position.set(16, 8, -18);
+  scene.add(rimLight);
+
   createSafeAreaOverlay(root);
   createRecordingControls(root, renderer.domElement);
-  createModeToggle(root, theatreStudio);
 
-  const gltf = await loadGLB("/assets/astronomy/spacecraft/iss/iss.glb");
-  console.log("GLTF loaded:", gltf);
+  const titanTrailer = createTitanWorldCup3026Scene(scene);
 
-  const assetRoot = new THREE.Group();
-  assetRoot.name = "ISSRoot";
-
-  const loadedObject = gltf.scene;
-  loadedObject.name = "ISS";
-
-  const box = new THREE.Box3().setFromObject(loadedObject);
-  const center = new THREE.Vector3();
-  const size = new THREE.Vector3();
-
-  box.getCenter(center);
-  box.getSize(size);
-
-  loadedObject.position.sub(center);
-
-  const maxSize = Math.max(size.x, size.y, size.z);
-  const fitScale = maxSize > 0 ? 3 / maxSize : 1;
-  loadedObject.scale.setScalar(fitScale);
-
-  assetRoot.add(loadedObject);
-  scene.add(assetRoot);
-
-  controls.setLookAt(0, 1.5, 7, 0, 0, 0, false);
+  camera.position.set(0, 4.2, 18);
+  camera.lookAt(0, 1, -10);
+  controls.setLookAt(0, 4.2, 18, 0, 1, -10, false);
 
   const project = getProject("Dehlero");
-  const sheet = project.sheet("Main Scene");
+  const sheet = project.sheet("Titan World Cup 3026");
 
-  const theatreObject = sheet.object("ISS", {
-    positionX: 0,
-    positionY: 0,
-    positionZ: 0,
-    rotationY: 0,
-    scale: 1,
-  });
+  function updateCamera(t: number) {
+    if (t < 6) {
+      const k = t / 6;
+      controls.setLookAt(
+        THREE.MathUtils.lerp(0, -3.5, k),
+        THREE.MathUtils.lerp(4.2, 2.2, k),
+        THREE.MathUtils.lerp(18, 9, k),
+        THREE.MathUtils.lerp(0, -2, k),
+        0.5,
+        THREE.MathUtils.lerp(-10, 0, k),
+        false,
+      );
+      camera.fov = THREE.MathUtils.lerp(46, 36, k);
+    } else if (t < 16) {
+      const k = (t - 6) / 10;
+      controls.setLookAt(
+        THREE.MathUtils.lerp(-3.5, 5.5, k),
+        THREE.MathUtils.lerp(2.2, 3.8, k),
+        THREE.MathUtils.lerp(9, -8, k),
+        titanTrailer.ball.position.x,
+        titanTrailer.ball.position.y,
+        titanTrailer.ball.position.z,
+        false,
+      );
+      camera.fov = THREE.MathUtils.lerp(36, 30, k);
+    } else if (t < 24) {
+      const k = (t - 16) / 8;
+      controls.setLookAt(
+        THREE.MathUtils.lerp(5.5, 0, k),
+        THREE.MathUtils.lerp(3.8, 6.5, k),
+        THREE.MathUtils.lerp(-8, 20, k),
+        THREE.MathUtils.lerp(titanTrailer.ball.position.x, 8, k),
+        THREE.MathUtils.lerp(titanTrailer.ball.position.y, 3, k),
+        THREE.MathUtils.lerp(titanTrailer.ball.position.z, -28, k),
+        false,
+      );
+      camera.fov = THREE.MathUtils.lerp(30, 38, k);
+    } else {
+      const k = Math.min((t - 24) / 6, 1);
+      controls.setLookAt(
+        THREE.MathUtils.lerp(0, 0, k),
+        THREE.MathUtils.lerp(6.5, 7.5, k),
+        THREE.MathUtils.lerp(20, 24, k),
+        0,
+        5,
+        -22,
+        false,
+      );
+      camera.fov = THREE.MathUtils.lerp(38, 34, k);
+    }
 
-  theatreObject.onValuesChange((values) => {
-    assetRoot.position.set(
-      values.positionX,
-      values.positionY,
-      values.positionZ
-    );
-
-    assetRoot.rotation.y = values.rotationY;
-    assetRoot.scale.setScalar(values.scale);
-  });
+    camera.updateProjectionMatrix();
+  }
 
   function resize() {
     const width = window.innerWidth;
@@ -141,6 +125,10 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
     requestAnimationFrame(animate);
 
     const delta = clock.getDelta();
+    const elapsed = clock.getElapsedTime();
+
+    titanTrailer.update(elapsed);
+    updateCamera(elapsed);
 
     controls.update(delta);
     renderer.render(scene, camera);
@@ -148,6 +136,7 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
 
   resize();
   window.addEventListener("resize", resize);
+
   animate();
 
   return {
@@ -157,6 +146,5 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
     controls,
     project,
     sheet,
-    loadedObject,
   };
 }
