@@ -1,1503 +1,108 @@
 import * as THREE from "three";
-import { HierarchyPanel } from "../editor/HierarchyPanel";
 import CameraControls from "camera-controls";
 import { getProject, types } from "@theatre/core";
 import type { ISheet, ISheetObject } from "@theatre/core";
-import studioModule from "@theatre/studio";
-import type { IScrub, IStudio } from "@theatre/studio";
-import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import type { IScrub } from "@theatre/studio";
 
+import { HierarchyPanel } from "../editor/HierarchyPanel";
 import type { SceneNode } from "../core/scene/SceneNode";
 import { createSceneNodeFromObject } from "../core/scene/SceneNode";
 import { SceneRegistry } from "../core/scene/SceneRegistry";
 import { SelectionManager } from "../editor/SelectionManager";
 import { createTransformEditor } from "../editor/TransformEditor";
-import { createSaturnRings } from "../assets/astronomy/createSaturnRings";
 import { createStudioCamera } from "../engine/camera/createStudioCamera";
 import { createRenderer } from "../engine/renderer/createRenderer";
 import { createScene } from "../engine/scene/createScene";
 
+import {
+  CAMERA_SHOT_LABELS,
+  ACTIVE_PROJECT_STORAGE_KEY,
+} from "./studioConstants";
+
+import type {
+  CameraOption,
+  CameraShot,
+  LibraryItem,
+  MotionPreset,
+  NodeSource,
+  RecordingAspect,
+  SavedScene,
+  SavedTimelineClip,
+  SceneHelper,
+  TheatreBinding,
+  TimelineAnimation,
+  TimelineDockItem,
+} from "./studioTypes";
+
+import { createLibrary } from "./studioLibrary";
+import {
+  addObjectHelper,
+  disposeObject,
+  placeObject,
+} from "./studioObjectUtils";
+import {
+  applyRgbaToColor,
+  colorToRgba,
+  getFirstStandardMaterial,
+  numberProp,
+  vectorProps,
+} from "./studioMath";
+import { loadProjectByName, migrateLegacySceneStorage } from "./studioStorage";
+import {
+  studio,
+  studioInitialization,
+  cleanupDuplicateTheatreShotPanes,
+} from "./studioTheatre";
+import {
+  type RecordingState,
+  getRecordingSize,
+  createRecordingDownload,
+  isRecordingSupported,
+} from "./studioRecording";
+import {
+  pickNode as pickNodeFromScene,
+  attachPickingEvents,
+} from "./studioScenePicking";
+import { createObjectMotionAnimation } from "./studioObjectMotions";
+import {
+  createShotRuntimeState,
+  calculateCameraShotState,
+  getShotTarget as getShotTargetFromSelection,
+} from "./studioCameraShots";
+import {
+  createTimelineAnimation,
+  getCameraShotAnimations as getCameraShotAnimationsFromState,
+  getTimelineDuration as getTimelineDurationFromState,
+  getCameraShotTimelineItems as getCameraShotTimelineItemsFromState,
+  getObjectMotionTimelineItems as getObjectMotionTimelineItemsFromState,
+  serializeTimeline as serializeTimelineData,
+  clearTimelineState,
+  applyCameraShotOrder as applyCameraShotOrderData,
+  resetTimelineAnimations,
+  updateTimelineAnimations,
+} from "./studioTimeline";
+import {
+  bakeCameraShotToTheatre,
+  bakeObjectMotionToTheatre,
+} from "./studioTheatreBake";
+import {
+  serializeScene as serializeSceneData,
+  saveSceneToStorage,
+  saveCurrentSceneToStorage,
+  getNextUntitledSceneName,
+  getSavedProject,
+  applySavedObjectToScene,
+  importModelObject,
+  applyTextureToSelectedObject,
+  createTexturedPlanetObject,
+} from "./studioScenePersistence";
+
+import { createWorkspaceBar } from "./ui/createWorkspaceBar";
+import { createSceneBuilderPanel } from "./ui/createSceneBuilderPanel";
+import { createProductionPanel } from "./ui/createProductionPanel";
+import { createTimelineDock } from "./ui/createTimelineDock";
+
 CameraControls.install({ THREE });
-
-// Theatre Studio 0.7 ships a CommonJS bundle whose runtime default export can
-// be nested once when Vite serves it without dependency pre-bundling.
-const studio = (
-  (studioModule as unknown as { default?: IStudio }).default ?? studioModule
-) as IStudio;
-
-const studioInitialization = Promise.resolve(
-  studio.initialize({
-    persistenceKey: "dehlero-theatre-studio-v2",
-  }) as unknown as void | Promise<void>,
-);
-studio.ui.restore();
-
-const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath("/draco/gltf/");
-dracoLoader.setDecoderConfig({ type: "wasm" });
-
-const gltfLoader = new GLTFLoader();
-gltfLoader.setDRACOLoader(dracoLoader);
-
-const objLoader = new OBJLoader();
-
-type LibraryCategory = "3D" | "2D" | "Lights" | "Camera" | "Planets";
-
-type LibraryItem = {
-  id: string;
-  label: string;
-  category: LibraryCategory;
-  create: () => THREE.Object3D;
-};
-
-type UpdatableHelper = {
-  update: () => void;
-};
-
-type SceneHelper = THREE.Object3D & UpdatableHelper;
-
-type NodeSource =
-  | { type: "library"; libraryId: string }
-  | { type: "model"; assetKey: string; fileName: string }
-  | { type: "textured-planet"; assetKey: string; fileName: string }
-  | { type: "ambient" };
-
-type SavedObject = {
-  name: string;
-  source: NodeSource;
-  transform: {
-    position: [number, number, number];
-    rotation: [number, number, number];
-    scale: [number, number, number];
-  };
-  texture?: {
-    assetKey: string;
-    fileName: string;
-  };
-};
-
-type SavedScene = {
-  version: 1 | 2;
-  name: string;
-  objects: SavedObject[];
-  timeline?: SavedTimelineClip[];
-};
-
-type MotionPreset = "spin" | "pulse" | "float" | "color-shift";
-type CameraShot = "static" | "orbit" | "dolly-in" | "close-up" | "dolly-zoom";
-type RecordingAspect = "16:9" | "9:16";
-type WorkspaceMode = "scene" | "shots" | "animate" | "record";
-
-type SavedTimelineClip =
-  | {
-      kind: "camera-shot";
-      shot: CameraShot;
-      start: number;
-      duration: number;
-      cameraName: string;
-      targetName?: string;
-    }
-  | {
-      kind: "object-motion";
-      preset: MotionPreset;
-      start: number;
-      duration: number;
-      targetName: string;
-      loop: boolean;
-    };
-
-type CameraOption = {
-  id: string;
-  label: string;
-};
-
-type ShotListItem = {
-  id: string;
-  label: string;
-  cameraLabel: string;
-  targetLabel: string;
-  duration: number;
-  active?: boolean;
-};
-
-type TimelineDockItem = ShotListItem & {
-  start: number;
-  kind: "camera-shot" | "object-motion";
-};
-
-type TimelineAnimation = {
-  id: string;
-  name: string;
-  kind?: "object-motion" | "camera-shot";
-  metadata?: {
-    cameraLabel?: string;
-    preset?: MotionPreset;
-    shot?: CameraShot;
-    targetLabel?: string;
-  };
-  elapsed: number;
-  delay: number;
-  duration: number;
-  loop: boolean;
-  started: boolean;
-  finished: boolean;
-  start?: () => void;
-  update: (progress: number, delta: number) => void;
-  complete?: () => void;
-};
-
-type TheatreBinding = {
-  objectKey: string;
-  theatreObject: ISheetObject<any>;
-  unsubscribe: () => void;
-};
-
-type TheatrePrimitivePath = Array<string | number>;
-
-type TheatreInternalStudio = {
-  transaction: (callback: (api: {
-    stateEditors: {
-      coreByProject: {
-        historic: {
-          sheetsById: {
-            sequence: {
-              setPrimitivePropAsSequenced: (
-                address: Record<string, unknown> & {
-                  pathToProp: TheatrePrimitivePath;
-                },
-                propConfig?: unknown,
-              ) => void;
-            };
-          };
-        };
-      };
-    };
-  }) => void) => void;
-};
-
-const CAMERA_SHOT_LABELS: Record<CameraShot, string> = {
-  static: "Static Shot",
-  orbit: "Orbit",
-  "dolly-in": "Dolly",
-  "close-up": "Close Up",
-  "dolly-zoom": "Dolly Zoom",
-};
-
-const SCENE_STORAGE_KEY = "dehlero.scene.v1";
-const PROJECT_INDEX_STORAGE_KEY = "dehlero.projects.v1";
-const ACTIVE_PROJECT_STORAGE_KEY = "dehlero.activeProject.v1";
-const ASSET_DB_NAME = "dehlero-assets";
-const ASSET_STORE_NAME = "assets";
-
-function createDefaultMaterial(color: THREE.ColorRepresentation) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.58,
-    metalness: 0.04,
-  });
-}
-
-function setObjectShadows(object: THREE.Object3D) {
-  object.traverse((child) => {
-    if (child instanceof THREE.Mesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
-    }
-  });
-}
-
-function normalizeImportedObject(object: THREE.Object3D) {
-  const box = new THREE.Box3().setFromObject(object);
-  const center = new THREE.Vector3();
-  const size = new THREE.Vector3();
-
-  box.getCenter(center);
-  box.getSize(size);
-
-  const maxSize = Math.max(size.x, size.y, size.z);
-
-  if (maxSize > 0) {
-    const wrapper = new THREE.Group();
-    wrapper.add(object);
-    object.position.sub(center);
-    wrapper.scale.setScalar(2.4 / maxSize);
-    setObjectShadows(wrapper);
-    return wrapper;
-  }
-
-  setObjectShadows(object);
-  return object;
-}
-
-function createPlanet(texture?: THREE.Texture) {
-  const material = new THREE.MeshStandardMaterial({
-    map: texture,
-    color: texture ? "#ffffff" : "#8eb7ff",
-    roughness: 1,
-    metalness: 0,
-  });
-
-  const planet = new THREE.Mesh(new THREE.SphereGeometry(1.1, 96, 48), material);
-  planet.name = "Planet";
-  planet.castShadow = true;
-  planet.receiveShadow = true;
-  return planet;
-}
-
-function createLabelSprite(text: string) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 192;
-
-  const context = canvas.getContext("2d")!;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "rgba(18, 24, 38, 0.88)";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = "rgba(255, 255, 255, 0.72)";
-  context.lineWidth = 8;
-  context.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
-  context.fillStyle = "#ffffff";
-  context.font = "700 58px Arial";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(text, canvas.width / 2, canvas.height / 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: texture,
-      transparent: true,
-      depthWrite: false,
-    }),
-  );
-
-  sprite.scale.set(3.2, 1.2, 1);
-  sprite.position.set(0, 1.8, 0);
-  return sprite;
-}
-
-function createLibrary(): LibraryItem[] {
-  return [
-    {
-      id: "cube",
-      label: "Cube",
-      category: "3D",
-      create: () =>
-        new THREE.Mesh(
-          new THREE.BoxGeometry(1.4, 1.4, 1.4),
-          createDefaultMaterial("#6ea8fe"),
-        ),
-    },
-    {
-      id: "sphere",
-      label: "Sphere",
-      category: "3D",
-      create: () =>
-        new THREE.Mesh(
-          new THREE.SphereGeometry(0.85, 48, 24),
-          createDefaultMaterial("#91d36e"),
-        ),
-    },
-    {
-      id: "cylinder",
-      label: "Cylinder",
-      category: "3D",
-      create: () =>
-        new THREE.Mesh(
-          new THREE.CylinderGeometry(0.65, 0.65, 1.7, 48),
-          createDefaultMaterial("#f4b860"),
-        ),
-    },
-    {
-      id: "plane",
-      label: "Plane",
-      category: "2D",
-      create: () => {
-        const plane = new THREE.Mesh(
-          new THREE.PlaneGeometry(2.4, 1.5),
-          new THREE.MeshStandardMaterial({
-            color: "#f7f3e8",
-            roughness: 0.75,
-            side: THREE.DoubleSide,
-          }),
-        );
-        plane.rotation.x = -Math.PI / 2;
-        return plane;
-      },
-    },
-    {
-      id: "circle",
-      label: "Circle",
-      category: "2D",
-      create: () => {
-        const circle = new THREE.Mesh(
-          new THREE.CircleGeometry(0.9, 64),
-          new THREE.MeshStandardMaterial({
-            color: "#ff7aa2",
-            roughness: 0.72,
-            side: THREE.DoubleSide,
-          }),
-        );
-        circle.rotation.x = -Math.PI / 2;
-        return circle;
-      },
-    },
-    {
-      id: "label",
-      label: "Text Card",
-      category: "2D",
-      create: () => createLabelSprite("Title"),
-    },
-    {
-      id: "planet",
-      label: "Planet",
-      category: "Planets",
-      create: () => createPlanet(),
-    },
-    {
-      id: "saturn-rings",
-      label: "Saturn Rings",
-      category: "Planets",
-      create: () => {
-        const rings = createSaturnRings(1.1);
-        rings.rotation.x = Math.PI * 0.62;
-        rings.rotation.z = Math.PI * 0.08;
-        return rings;
-      },
-    },
-    {
-      id: "directional-light",
-      label: "Directional",
-      category: "Lights",
-      create: () => {
-        const light = new THREE.DirectionalLight("#ffffff", 3);
-        light.position.set(3, 5, 2);
-        return light;
-      },
-    },
-    {
-      id: "point-light",
-      label: "Point",
-      category: "Lights",
-      create: () => {
-        const light = new THREE.PointLight("#ffd08a", 18, 12);
-        light.position.set(0, 3, 2);
-        return light;
-      },
-    },
-    {
-      id: "production-camera",
-      label: "Camera",
-      category: "Camera",
-      create: () => {
-        const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 1000);
-        camera.position.set(0, 2.2, 7);
-        camera.lookAt(0, 0.75, 0);
-        return camera;
-      },
-    },
-  ];
-}
-
-function placeObject(object: THREE.Object3D, index: number) {
-  const column = index % 4;
-  const row = Math.floor(index / 4);
-  object.position.x += (column - 1.5) * 2.6;
-  object.position.z += row * 2.2;
-}
-
-function addObjectHelper(
-  scene: THREE.Scene,
-  object: THREE.Object3D,
-): SceneHelper | null {
-  if (object instanceof THREE.DirectionalLight) {
-    const helper = new THREE.DirectionalLightHelper(object, 0.8);
-    helper.visible = false;
-    scene.add(helper);
-    return helper;
-  }
-
-  if (object instanceof THREE.PointLight) {
-    const helper = new THREE.PointLightHelper(object, 0.45);
-    helper.visible = false;
-    scene.add(helper);
-    return helper;
-  }
-
-  if (object instanceof THREE.PerspectiveCamera) {
-    const helper = new THREE.CameraHelper(object);
-    helper.visible = false;
-    scene.add(helper);
-    return helper;
-  }
-
-  return null;
-}
-
-async function loadModelFile(file: File) {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-  const url = URL.createObjectURL(file);
-
-  try {
-    if (extension === "glb" || extension === "gltf") {
-      const gltf = await gltfLoader.loadAsync(url);
-      return gltf.scene;
-    }
-
-    if (extension === "obj") {
-      return await objLoader.loadAsync(url);
-    }
-
-    throw new Error(`Unsupported model format: ${extension ?? "unknown"}`);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-function loadTextureFile(file: File) {
-  const url = URL.createObjectURL(file);
-  const texture = new THREE.TextureLoader().load(url, () => {
-    URL.revokeObjectURL(url);
-  });
-
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  return texture;
-}
-
-function applyTextureToObject(object: THREE.Object3D, texture: THREE.Texture) {
-  object.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
-
-    const materials = Array.isArray(child.material)
-      ? child.material
-      : [child.material];
-
-    child.material = materials.map((material) => {
-      const nextMaterial =
-        material instanceof THREE.MeshStandardMaterial
-          ? material.clone()
-          : new THREE.MeshStandardMaterial();
-
-      nextMaterial.map = texture;
-      nextMaterial.color.set("#ffffff");
-      nextMaterial.needsUpdate = true;
-      return nextMaterial;
-    });
-  });
-}
-
-function openAssetDatabase() {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(ASSET_DB_NAME, 1);
-
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore(ASSET_STORE_NAME);
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function saveAssetBlob(key: string, blob: Blob) {
-  const db = await openAssetDatabase();
-
-  await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(ASSET_STORE_NAME, "readwrite");
-    transaction.objectStore(ASSET_STORE_NAME).put(blob, key);
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
-
-  db.close();
-}
-
-async function loadAssetBlob(key: string) {
-  const db = await openAssetDatabase();
-
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    const transaction = db.transaction(ASSET_STORE_NAME, "readonly");
-    const request = transaction.objectStore(ASSET_STORE_NAME).get(key);
-
-    request.onsuccess = () => {
-      const result = request.result;
-      if (result instanceof Blob) resolve(result);
-      else reject(new Error(`Missing asset: ${key}`));
-    };
-
-    request.onerror = () => reject(request.error);
-  });
-
-  db.close();
-  return blob;
-}
-
-function createAssetKey(file: File) {
-  return `${Date.now()}-${crypto.randomUUID()}-${file.name}`;
-}
-
-function createProjectStorageKey(name: string) {
-  return `${SCENE_STORAGE_KEY}:${encodeURIComponent(name)}`;
-}
-
-function getProjectNames() {
-  const rawNames = localStorage.getItem(PROJECT_INDEX_STORAGE_KEY);
-  if (!rawNames) return [];
-
-  try {
-    const names = JSON.parse(rawNames);
-    if (Array.isArray(names)) {
-      return names.filter((name): name is string => typeof name === "string");
-    }
-  } catch {
-    return [];
-  }
-
-  return [];
-}
-
-function setProjectNames(names: string[]) {
-  localStorage.setItem(
-    PROJECT_INDEX_STORAGE_KEY,
-    JSON.stringify([...new Set(names)].sort((a, b) => a.localeCompare(b))),
-  );
-}
-
-function addProjectName(name: string) {
-  setProjectNames([...getProjectNames(), name]);
-}
-
-function loadProjectByName(name: string) {
-  const rawScene = localStorage.getItem(createProjectStorageKey(name));
-  return rawScene ? (JSON.parse(rawScene) as SavedScene) : null;
-}
-
-function migrateLegacySceneStorage() {
-  const legacyScene = localStorage.getItem(SCENE_STORAGE_KEY);
-  if (!legacyScene) return;
-
-  try {
-    const savedScene = JSON.parse(legacyScene) as SavedScene;
-    const name = savedScene.name || "Untitled Scene";
-
-    if (!localStorage.getItem(createProjectStorageKey(name))) {
-      localStorage.setItem(createProjectStorageKey(name), legacyScene);
-      addProjectName(name);
-      localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, name);
-    }
-
-    localStorage.removeItem(SCENE_STORAGE_KEY);
-  } catch {
-    localStorage.removeItem(SCENE_STORAGE_KEY);
-  }
-}
-
-function loadTextureFromBlob(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const texture = new THREE.TextureLoader().load(url, () => {
-    URL.revokeObjectURL(url);
-  });
-
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  return texture;
-}
-
-function serializeTransform(object: THREE.Object3D): SavedObject["transform"] {
-  return {
-    position: [object.position.x, object.position.y, object.position.z],
-    rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
-    scale: [object.scale.x, object.scale.y, object.scale.z],
-  };
-}
-
-function applySavedTransform(
-  object: THREE.Object3D,
-  transform: SavedObject["transform"],
-) {
-  object.position.fromArray(transform.position);
-  object.rotation.set(
-    transform.rotation[0],
-    transform.rotation[1],
-    transform.rotation[2],
-  );
-  object.scale.fromArray(transform.scale);
-}
-
-function disposeMaterial(material: THREE.Material) {
-  Object.values(material).forEach((value) => {
-    if (value instanceof THREE.Texture) value.dispose();
-  });
-
-  material.dispose();
-}
-
-function disposeObject(object: THREE.Object3D) {
-  object.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
-
-    child.geometry.dispose();
-
-    if (Array.isArray(child.material)) {
-      child.material.forEach(disposeMaterial);
-      return;
-    }
-
-    disposeMaterial(child.material);
-  });
-}
-
-function easeInOutCubic(t: number) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
-function getObjectCenter(object: THREE.Object3D) {
-  const box = new THREE.Box3().setFromObject(object);
-  const center = new THREE.Vector3();
-
-  if (!box.isEmpty()) {
-    box.getCenter(center);
-    return center;
-  }
-
-  return object.getWorldPosition(center);
-}
-
-function getObjectRadius(object: THREE.Object3D) {
-  const box = new THREE.Box3().setFromObject(object);
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  return Math.max(size.length() * 0.5, 1);
-}
-
-function getFirstStandardMaterial(object: THREE.Object3D): THREE.MeshStandardMaterial | null {
-  let material: THREE.MeshStandardMaterial | null = null;
-
-  object.traverse((child) => {
-    if (material || !(child instanceof THREE.Mesh)) return;
-
-    const candidate = Array.isArray(child.material)
-      ? child.material[0]
-      : child.material;
-
-    if (candidate instanceof THREE.MeshStandardMaterial) {
-      material = candidate;
-    }
-  });
-
-  return material;
-}
-
-function colorToRgba(color: THREE.Color, alpha = 1) {
-  return {
-    r: color.r,
-    g: color.g,
-    b: color.b,
-    a: alpha,
-  };
-}
-
-function applyRgbaToColor(
-  color: THREE.Color,
-  rgba: { r: number; g: number; b: number; a?: number },
-) {
-  color.setRGB(
-    THREE.MathUtils.clamp(rgba.r, 0, 1),
-    THREE.MathUtils.clamp(rgba.g, 0, 1),
-    THREE.MathUtils.clamp(rgba.b, 0, 1),
-  );
-}
-
-function numberProp(value: number, range: [number, number]) {
-  return types.number(value, { range });
-}
-
-function vectorProps(vector: THREE.Vector3 | THREE.Euler, range: [number, number]) {
-  return types.compound({
-    x: numberProp(vector.x, range),
-    y: numberProp(vector.y, range),
-    z: numberProp(vector.z, range),
-  });
-}
-
-function getTheatreInternalStudio(): TheatreInternalStudio | null {
-  const bundle = (
-    window as Window & {
-      __TheatreJS_StudioBundle?: { _studio?: TheatreInternalStudio };
-    }
-  ).__TheatreJS_StudioBundle;
-  const internalStudio = bundle?._studio;
-  return internalStudio && typeof internalStudio.transaction === "function"
-    ? internalStudio
-    : null;
-}
-
-function sequenceTheatrePrimitiveProps(
-  theatreObject: ISheetObject<any>,
-  paths: TheatrePrimitivePath[],
-) {
-  const internalStudio = getTheatreInternalStudio();
-  if (!internalStudio) {
-    throw new Error("Theatre sequencing API is unavailable");
-  }
-
-  internalStudio.transaction(({ stateEditors }) => {
-    paths.forEach((pathToProp) => {
-      stateEditors.coreByProject.historic.sheetsById.sequence.setPrimitivePropAsSequenced(
-        {
-          ...theatreObject.address,
-          pathToProp,
-        },
-      );
-    });
-  });
-}
-
-function cleanupDuplicateTheatreShotPanes() {
-  const bundle = (
-    window as Window & {
-      __TheatreJS_StudioBundle?: {
-        _studio?: {
-          paneManager?: {
-            _getAllPanes?: () => {
-              getValue: () => Record<
-                string,
-                {
-                  instanceId: string;
-                  definition?: { class?: string };
-                }
-              >;
-            };
-            destroyPane?: (pane: { instanceId: string }) => void;
-          };
-        };
-      };
-    }
-  ).__TheatreJS_StudioBundle;
-  const panePrism = bundle?._studio?.paneManager?._getAllPanes?.();
-  const panes = panePrism ? Object.values(panePrism.getValue()) : [];
-  const shotPanes = panes.filter(
-    (pane) => pane.definition?.class === "dehlero-shot-director",
-  );
-
-  shotPanes.slice(1).forEach((pane) => {
-    bundle?._studio?.paneManager?.destroyPane?.(pane);
-  });
-}
-
-function createWorkspaceBar({
-  root,
-  onModeChange,
-  onSave,
-}: {
-  root: HTMLElement;
-  onModeChange: (mode: WorkspaceMode) => void;
-  onSave: () => void;
-}) {
-  const bar = document.createElement("header");
-  bar.className = "workspace-bar";
-  bar.innerHTML = `
-    <div class="workspace-brand">
-      <strong>Dehlero Studio</strong>
-      <span>Scene and motion editor</span>
-    </div>
-    <nav class="workspace-tabs" aria-label="Workspace">
-      <button type="button" data-workspace="scene">Scene</button>
-      <button type="button" data-workspace="shots">Shots</button>
-      <button type="button" data-workspace="animate">Animate</button>
-      <button type="button" data-workspace="record">Record</button>
-    </nav>
-    <div class="workspace-actions">
-      <button type="button" data-panel-toggle="assets">Assets</button>
-      <button type="button" data-panel-toggle="inspector">Inspector</button>
-      <button type="button" data-action="save">Save</button>
-    </div>
-  `;
-
-  let activeMode: WorkspaceMode = "scene";
-
-  function setMode(mode: WorkspaceMode) {
-    activeMode = mode;
-    root.dataset.workspace = mode;
-    bar.querySelectorAll<HTMLButtonElement>("[data-workspace]").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.workspace === mode);
-    });
-    onModeChange(mode);
-  }
-
-  bar.querySelectorAll<HTMLButtonElement>("[data-workspace]").forEach((button) => {
-    button.onclick = () => setMode(button.dataset.workspace as WorkspaceMode);
-  });
-
-  bar.querySelector<HTMLButtonElement>('[data-action="save"]')!.onclick = onSave;
-
-  bar.querySelectorAll<HTMLButtonElement>("[data-panel-toggle]").forEach((button) => {
-    button.onclick = () => {
-      const key = button.dataset.panelToggle;
-      if (!key) return;
-
-      const attribute = key === "assets" ? "assetsOpen" : "inspectorOpen";
-      const nextValue = root.dataset[attribute] !== "true";
-      root.dataset[attribute] = String(nextValue);
-      button.classList.toggle("is-active", nextValue);
-      window.dispatchEvent(new Event("resize"));
-    };
-  });
-
-  root.appendChild(bar);
-  setMode(activeMode);
-
-  return { setMode };
-}
-
-function createSceneBuilderPanel({
-  root,
-  library,
-  addLibraryObject,
-  importModel,
-  applyTexture,
-  createPlanetFromTexture,
-  saveScene,
-  loadScene,
-  switchScene,
-  newScene,
-}: {
-  root: HTMLElement;
-  library: LibraryItem[];
-  addLibraryObject: (item: LibraryItem) => void;
-  importModel: (file: File) => void;
-  applyTexture: (file: File) => void;
-  createPlanetFromTexture: (file: File) => void;
-  saveScene: () => void;
-  loadScene: () => void;
-  switchScene: (name: string) => void;
-  newScene: () => void;
-}) {
-  const panel = document.createElement("aside");
-  panel.className = "asset-library-panel";
-
-  const categories: LibraryCategory[] = ["3D", "2D", "Planets", "Lights", "Camera"];
-
-  panel.innerHTML = `
-    <div class="panel-title">Scene Builder</div>
-    <div class="project-panel">
-      <label>
-        Scene Name
-        <input id="scene-name" type="text" value="Untitled Scene" />
-      </label>
-      <label>
-        Saved Projects
-        <select id="project-select"></select>
-      </label>
-      <div class="project-buttons">
-        <button id="save-scene" type="button">Save Scene</button>
-        <button id="load-scene" type="button">Open</button>
-        <button id="new-scene" type="button">New</button>
-      </div>
-    </div>
-    <div class="asset-library-groups"></div>
-    <div class="asset-import-panel">
-      <button id="import-model" type="button">Import Model</button>
-      <button id="apply-texture" type="button">Apply Texture</button>
-      <button id="planet-texture" type="button">Planet From Texture</button>
-      <div id="asset-status" class="asset-status">Ready</div>
-    </div>
-  `;
-
-  const groups = panel.querySelector<HTMLDivElement>(".asset-library-groups")!;
-  const status = panel.querySelector<HTMLDivElement>("#asset-status")!;
-  const sceneNameInput = panel.querySelector<HTMLInputElement>("#scene-name")!;
-  const projectSelect = panel.querySelector<HTMLSelectElement>("#project-select")!;
-
-  function refreshProjectOptions(selectedName?: string) {
-    const names = getProjectNames();
-    projectSelect.innerHTML = "";
-
-    if (names.length === 0) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "No saved projects";
-      projectSelect.appendChild(option);
-      return;
-    }
-
-    names.forEach((name) => {
-      const option = document.createElement("option");
-      option.value = name;
-      option.textContent = name;
-      projectSelect.appendChild(option);
-    });
-
-    if (selectedName && names.includes(selectedName)) {
-      projectSelect.value = selectedName;
-    }
-  }
-
-  categories.forEach((category) => {
-    const section = document.createElement("section");
-    section.className = "asset-library-group";
-
-    const heading = document.createElement("h3");
-    heading.textContent = category;
-    section.appendChild(heading);
-
-    const buttons = document.createElement("div");
-    buttons.className = "asset-library-buttons";
-
-    library
-      .filter((item) => item.category === category)
-      .forEach((item) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `asset-button asset-button-${item.id}`;
-        button.title = item.label;
-        button.setAttribute("aria-label", item.label);
-        button.innerHTML = `
-          <span class="asset-button-icon" aria-hidden="true"></span>
-          <span class="asset-button-label">${item.label}</span>
-        `;
-        button.onclick = () => addLibraryObject(item);
-        buttons.appendChild(button);
-      });
-
-    section.appendChild(buttons);
-    groups.appendChild(section);
-  });
-
-  const modelInput = document.createElement("input");
-  modelInput.type = "file";
-  modelInput.accept = ".glb,.gltf,.obj,model/gltf-binary,model/gltf+json";
-  modelInput.hidden = true;
-
-  const textureInput = document.createElement("input");
-  textureInput.type = "file";
-  textureInput.accept = "image/*";
-  textureInput.hidden = true;
-
-  const planetTextureInput = document.createElement("input");
-  planetTextureInput.type = "file";
-  planetTextureInput.accept = "image/*";
-  planetTextureInput.hidden = true;
-
-  modelInput.onchange = () => {
-    const file = modelInput.files?.[0];
-    if (!file) return;
-
-    status.textContent = `Importing ${file.name}`;
-    importModel(file);
-    modelInput.value = "";
-  };
-
-  textureInput.onchange = () => {
-    const file = textureInput.files?.[0];
-    if (!file) return;
-
-    applyTexture(file);
-    textureInput.value = "";
-  };
-
-  planetTextureInput.onchange = () => {
-    const file = planetTextureInput.files?.[0];
-    if (!file) return;
-
-    createPlanetFromTexture(file);
-    planetTextureInput.value = "";
-  };
-
-  panel.querySelector<HTMLButtonElement>("#import-model")!.onclick = () => {
-    modelInput.click();
-  };
-
-  panel.querySelector<HTMLButtonElement>("#apply-texture")!.onclick = () => {
-    textureInput.click();
-  };
-
-  panel.querySelector<HTMLButtonElement>("#planet-texture")!.onclick = () => {
-    planetTextureInput.click();
-  };
-
-  panel.querySelector<HTMLButtonElement>("#save-scene")!.onclick = saveScene;
-  panel.querySelector<HTMLButtonElement>("#load-scene")!.onclick = loadScene;
-  panel.querySelector<HTMLButtonElement>("#new-scene")!.onclick = newScene;
-
-  projectSelect.onchange = () => {
-    if (projectSelect.value) switchScene(projectSelect.value);
-  };
-
-  panel.append(modelInput, textureInput, planetTextureInput);
-
-  root.appendChild(panel);
-  return {
-    panel,
-    setStatus(message: string) {
-      status.textContent = message;
-    },
-    getSceneName() {
-      return sceneNameInput.value.trim() || "Untitled Scene";
-    },
-    setSceneName(name: string) {
-      sceneNameInput.value = name;
-      refreshProjectOptions(name);
-    },
-    getSelectedProjectName() {
-      return projectSelect.value || sceneNameInput.value.trim();
-    },
-    refreshProjects(selectedName?: string) {
-      refreshProjectOptions(selectedName);
-    },
-  };
-}
-
-function createProductionPanel({
-  root,
-  addShot,
-  applyObjectMotion,
-  applyCameraShot,
-  playTimeline,
-  pauseTimeline,
-  stopTimeline,
-  playTheatreSequence,
-  restoreTheatreStudio,
-  restoreTheatreStudioWithShots,
-  bakeShotsToTheatre,
-  startRecording,
-  stopRecording,
-  viewSelectedCamera,
-  viewMainCamera,
-  removeCameraShot,
-  moveCameraShot,
-  selectCameraShot,
-  updateCameraShotDuration,
-}: {
-  root: HTMLElement;
-  addShot: (duration: number) => void;
-  applyObjectMotion: (preset: MotionPreset, duration: number) => void;
-  applyCameraShot: (shot: CameraShot, duration: number) => void;
-  playTimeline: () => void;
-  pauseTimeline: () => void;
-  stopTimeline: () => void;
-  playTheatreSequence: () => void;
-  restoreTheatreStudio: () => void;
-  restoreTheatreStudioWithShots: () => void;
-  bakeShotsToTheatre: () => void;
-  startRecording: (aspect: RecordingAspect, seconds: number, fps: number) => void;
-  stopRecording: () => void;
-  viewSelectedCamera: (cameraId: string) => void;
-  viewMainCamera: () => void;
-  removeCameraShot: (shotId: string) => void;
-  moveCameraShot: (shotId: string, direction: -1 | 1) => void;
-  selectCameraShot: (shotId: string) => void;
-  updateCameraShotDuration: (shotId: string, duration: number) => void;
-}) {
-  const panel = document.createElement("aside");
-  panel.className = "production-panel";
-  panel.innerHTML = `
-    <div class="panel-title">Motion & Recording</div>
-    <div class="production-section production-section-primary" data-tool-section="playback">
-      <div class="production-section-title">Playback</div>
-      <div class="production-grid three">
-        <button id="timeline-play" type="button">Play</button>
-        <button id="timeline-pause" type="button">Pause</button>
-        <button id="timeline-stop" type="button">Stop</button>
-      </div>
-      <div class="production-grid three">
-        <button id="theatre-play" type="button">Theatre</button>
-        <button id="theatre-open" type="button">Blank Theatre</button>
-        <button id="theatre-shots" type="button">Theatre + Shots</button>
-      </div>
-      <button id="theatre-bake" type="button">Bake Shots to Theatre Keyframes</button>
-    </div>
-    <label data-tool-section="shots">
-      Duration
-      <input id="motion-duration" type="number" min="0.5" step="0.5" value="4" />
-    </label>
-    <div class="production-section" data-tool-section="shots">
-      <div class="production-section-title">Object Motion</div>
-      <div class="production-grid">
-        <button type="button" data-motion="spin">Spin</button>
-        <button type="button" data-motion="pulse">Pulse</button>
-        <button type="button" data-motion="float">Float</button>
-        <button type="button" data-motion="color-shift">Color</button>
-      </div>
-    </div>
-    <div class="production-section" data-tool-section="shots">
-      <div class="production-section-heading">
-        <div class="production-section-title">Shot Director</div>
-        <button id="add-shot" class="compact-button" type="button">Add Shot</button>
-      </div>
-      <div class="production-grid">
-        <button type="button" data-shot="orbit">Orbit</button>
-        <button type="button" data-shot="dolly-in">Dolly</button>
-        <button type="button" data-shot="close-up">Close Up</button>
-        <button type="button" data-shot="dolly-zoom">Dolly Zoom</button>
-      </div>
-      <div id="shot-list" class="shot-list"></div>
-    </div>
-    <div class="production-section" data-tool-section="camera">
-      <div class="production-section-title">Render Camera</div>
-      <label>
-        Camera
-        <select id="render-camera"></select>
-      </label>
-      <div class="production-grid two">
-        <button id="view-camera" type="button">View Camera</button>
-        <button id="view-main-camera" type="button">Main View</button>
-      </div>
-    </div>
-    <div class="production-section" data-tool-section="record">
-      <div class="production-section-title">Record Video</div>
-      <div class="recording-options">
-        <label>
-          Aspect
-          <select id="record-aspect">
-            <option value="16:9">16:9</option>
-            <option value="9:16">9:16</option>
-          </select>
-        </label>
-        <label>
-          Seconds
-          <input id="record-seconds" type="number" min="1" step="1" value="8" />
-        </label>
-        <label>
-          FPS
-          <input id="record-fps" type="number" min="12" max="60" step="1" value="30" />
-        </label>
-      </div>
-      <div class="production-grid two">
-        <button id="record-start" type="button">Start</button>
-        <button id="record-stop" type="button">Stop</button>
-      </div>
-      <div id="record-status" class="asset-status">Recorder ready</div>
-    </div>
-  `;
-
-  const durationInput = panel.querySelector<HTMLInputElement>("#motion-duration")!;
-  const aspectInput = panel.querySelector<HTMLSelectElement>("#record-aspect")!;
-  const secondsInput = panel.querySelector<HTMLInputElement>("#record-seconds")!;
-  const fpsInput = panel.querySelector<HTMLInputElement>("#record-fps")!;
-  const renderCameraInput = panel.querySelector<HTMLSelectElement>("#render-camera")!;
-  const shotList = panel.querySelector<HTMLDivElement>("#shot-list")!;
-  const status = panel.querySelector<HTMLDivElement>("#record-status")!;
-
-  const getDuration = () => Math.max(Number(durationInput.value) || 4, 0.5);
-
-  panel.querySelectorAll<HTMLButtonElement>("[data-motion]").forEach((button) => {
-    button.onclick = () => {
-      applyObjectMotion(button.dataset.motion as MotionPreset, getDuration());
-    };
-  });
-
-  panel.querySelectorAll<HTMLButtonElement>("[data-shot]").forEach((button) => {
-    button.onclick = () => {
-      viewSelectedCamera(renderCameraInput.value);
-      applyCameraShot(button.dataset.shot as CameraShot, getDuration());
-    };
-  });
-
-  panel.querySelector<HTMLButtonElement>("#timeline-play")!.onclick = playTimeline;
-  panel.querySelector<HTMLButtonElement>("#timeline-pause")!.onclick = pauseTimeline;
-  panel.querySelector<HTMLButtonElement>("#timeline-stop")!.onclick = stopTimeline;
-  panel.querySelector<HTMLButtonElement>("#theatre-play")!.onclick = playTheatreSequence;
-  panel.querySelector<HTMLButtonElement>("#theatre-open")!.onclick = restoreTheatreStudio;
-  panel.querySelector<HTMLButtonElement>("#theatre-shots")!.onclick =
-    restoreTheatreStudioWithShots;
-  panel.querySelector<HTMLButtonElement>("#theatre-bake")!.onclick =
-    bakeShotsToTheatre;
-  panel.querySelector<HTMLButtonElement>("#add-shot")!.onclick = () => {
-    addShot(getDuration());
-  };
-  panel.querySelector<HTMLButtonElement>("#view-camera")!.onclick = () => {
-    viewSelectedCamera(renderCameraInput.value);
-  };
-  panel.querySelector<HTMLButtonElement>("#view-main-camera")!.onclick = () => {
-    renderCameraInput.value = "main";
-    viewMainCamera();
-  };
-  panel.querySelector<HTMLButtonElement>("#record-stop")!.onclick = stopRecording;
-  panel.querySelector<HTMLButtonElement>("#record-start")!.onclick = () => {
-    viewSelectedCamera(renderCameraInput.value);
-    startRecording(
-      aspectInput.value as RecordingAspect,
-      Math.max(Number(secondsInput.value) || 8, 1),
-      Math.max(Number(fpsInput.value) || 30, 12),
-    );
-  };
-
-  shotList.onclick = (event) => {
-    const row = (event.target as HTMLElement).closest<HTMLElement>("[data-shot-row]");
-    if (row?.dataset.shotRow && !(event.target as HTMLElement).closest("button")) {
-      selectCameraShot(row.dataset.shotRow);
-      return;
-    }
-
-    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
-    if (!button?.dataset.shotId) return;
-
-    if (button.dataset.shotAction === "up") {
-      moveCameraShot(button.dataset.shotId, -1);
-      return;
-    }
-
-    if (button.dataset.shotAction === "down") {
-      moveCameraShot(button.dataset.shotId, 1);
-      return;
-    }
-
-    if (button.dataset.shotAction === "delete") {
-      removeCameraShot(button.dataset.shotId);
-    }
-  };
-
-  shotList.onchange = (event) => {
-    const input = (event.target as HTMLElement).closest<HTMLInputElement>(
-      "input[data-shot-duration]",
-    );
-    if (!input?.dataset.shotDuration) return;
-
-    updateCameraShotDuration(
-      input.dataset.shotDuration,
-      Math.max(Number(input.value) || 0.5, 0.5),
-    );
-  };
-
-  root.appendChild(panel);
-
-  return {
-    getSelectedCameraId() {
-      return renderCameraInput.value || "main";
-    },
-    refreshCameras(options: CameraOption[], selectedId: string) {
-      renderCameraInput.innerHTML = "";
-
-      options.forEach((option) => {
-        const element = document.createElement("option");
-        element.value = option.id;
-        element.textContent = option.label;
-        renderCameraInput.appendChild(element);
-      });
-
-      renderCameraInput.value = options.some((option) => option.id === selectedId)
-        ? selectedId
-        : "main";
-    },
-    refreshShots(shots: ShotListItem[]) {
-      shotList.innerHTML = "";
-
-      if (shots.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "shot-empty";
-        empty.textContent = "No camera shots";
-        shotList.appendChild(empty);
-        return;
-      }
-
-      shots.forEach((shot, index) => {
-        const row = document.createElement("div");
-        row.className = `shot-row${shot.active ? " is-active" : ""}`;
-        row.dataset.shotRow = shot.id;
-
-        const details = document.createElement("div");
-        details.className = "shot-details";
-
-        const title = document.createElement("strong");
-        title.textContent = `${index + 1}. ${shot.label}`;
-
-        const meta = document.createElement("span");
-        meta.textContent = `${shot.cameraLabel} -> ${shot.targetLabel} | ${shot.duration}s`;
-
-        const duration = document.createElement("input");
-        duration.type = "number";
-        duration.min = "0.5";
-        duration.step = "0.5";
-        duration.value = String(shot.duration);
-        duration.title = "Shot duration";
-        duration.dataset.shotDuration = shot.id;
-        duration.className = "shot-duration";
-
-        const actions = document.createElement("div");
-        actions.className = "shot-actions";
-
-        [
-          ["up", "Up"],
-          ["down", "Down"],
-          ["delete", "Del"],
-        ].forEach(([action, label]) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.dataset.shotAction = action;
-          button.dataset.shotId = shot.id;
-          button.textContent = label;
-          actions.appendChild(button);
-        });
-
-        details.append(title, meta, duration);
-        row.append(details, actions);
-        shotList.appendChild(row);
-      });
-    },
-    setStatus(message: string) {
-      status.textContent = message;
-    },
-  };
-}
-
-function createTimelineDock({
-  root,
-  playTimeline,
-  pauseTimeline,
-  stopTimeline,
-  restoreTheatreStudio,
-}: {
-  root: HTMLElement;
-  playTimeline: () => void;
-  pauseTimeline: () => void;
-  stopTimeline: () => void;
-  restoreTheatreStudio: () => void;
-}) {
-  const dock = document.createElement("aside");
-  dock.className = "timeline-dock";
-  dock.innerHTML = `
-    <div class="timeline-dock-header">
-      <div>
-        <div class="timeline-dock-title">Shot Sequence</div>
-        <div id="timeline-dock-status" class="timeline-dock-status">No clips yet</div>
-      </div>
-      <div id="timeline-time" class="timeline-time">0.00s</div>
-      <div class="timeline-dock-controls">
-        <button id="dock-play" type="button">Play</button>
-        <button id="dock-pause" type="button">Pause</button>
-        <button id="dock-stop" type="button">Stop</button>
-        <button id="dock-studio" type="button">Theatre Editor</button>
-      </div>
-    </div>
-    <div class="timeline-dock-body">
-      <div class="timeline-ruler" id="timeline-ruler"></div>
-      <div class="timeline-tracks" id="timeline-tracks">
-        <div class="timeline-playhead" id="timeline-playhead"></div>
-        <div class="timeline-track-row">
-          <div class="timeline-track-label">Camera Shots</div>
-          <div class="timeline-track" data-track="camera-shot">
-            <div class="timeline-empty">Add camera shots to build a sequence</div>
-          </div>
-        </div>
-        <div class="timeline-track-row">
-          <div class="timeline-track-label">Object Motion</div>
-          <div class="timeline-track" data-track="object-motion">
-            <div class="timeline-empty">Select object and add motion</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-
-  const status = dock.querySelector<HTMLDivElement>("#timeline-dock-status")!;
-  const timeReadout = dock.querySelector<HTMLDivElement>("#timeline-time")!;
-  const ruler = dock.querySelector<HTMLDivElement>("#timeline-ruler")!;
-  const tracks = dock.querySelector<HTMLDivElement>("#timeline-tracks")!;
-  const playhead = dock.querySelector<HTMLDivElement>("#timeline-playhead")!;
-  let timelineDuration = 10;
-
-  dock.querySelector<HTMLButtonElement>("#dock-play")!.onclick = playTimeline;
-  dock.querySelector<HTMLButtonElement>("#dock-pause")!.onclick = pauseTimeline;
-  dock.querySelector<HTMLButtonElement>("#dock-stop")!.onclick = stopTimeline;
-  dock.querySelector<HTMLButtonElement>("#dock-studio")!.onclick = restoreTheatreStudio;
-
-  function renderRuler(totalDuration: number) {
-    ruler.innerHTML = "";
-    const tickCount = Math.max(Math.ceil(totalDuration), 1);
-
-    for (let second = 0; second <= tickCount; second += 1) {
-      const tick = document.createElement("div");
-      tick.className = "timeline-tick";
-      tick.style.left = `${(second / tickCount) * 100}%`;
-      tick.textContent = `${second}s`;
-      ruler.appendChild(tick);
-    }
-  }
-
-  function setPlayhead(position: number, totalDuration = timelineDuration) {
-    const normalizedTotal = Math.max(totalDuration, 0.1);
-    const percent = THREE.MathUtils.clamp(position / normalizedTotal, 0, 1) * 100;
-    const trackOffset = 98;
-    playhead.style.left = `calc(${trackOffset}px + ${percent}% - ${
-      (percent / 100) * trackOffset
-    }px)`;
-    timeReadout.textContent = `${position.toFixed(2)}s`;
-  }
-
-  root.appendChild(dock);
-
-  return {
-    refresh(items: TimelineDockItem[], totalDuration: number) {
-      timelineDuration = Math.max(totalDuration, 10);
-      renderRuler(timelineDuration);
-
-      tracks.querySelectorAll(".timeline-track").forEach((track) => {
-        track.querySelectorAll(".timeline-clip, .timeline-empty").forEach((node) => {
-          node.remove();
-        });
-      });
-
-      if (items.length === 0) {
-        tracks.querySelectorAll<HTMLDivElement>(".timeline-track").forEach((track) => {
-          const empty = document.createElement("div");
-          empty.className = "timeline-empty";
-          empty.textContent =
-            track.dataset.track === "camera-shot"
-              ? "Add camera shots to build a sequence"
-              : "Select object and add motion";
-          track.appendChild(empty);
-        });
-        status.textContent = "No clips yet";
-        setPlayhead(0);
-        return;
-      }
-
-      items.forEach((item) => {
-        const track = tracks.querySelector<HTMLDivElement>(
-          `.timeline-track[data-track="${item.kind}"]`,
-        );
-        if (!track) return;
-
-        const clip = document.createElement("div");
-        clip.className = `timeline-clip timeline-clip-${item.kind}`;
-        clip.style.left = `${(item.start / timelineDuration) * 100}%`;
-        clip.style.width = `${Math.max((item.duration / timelineDuration) * 100, 4)}%`;
-        clip.title = `${item.label} | ${item.cameraLabel} -> ${item.targetLabel}`;
-
-        const label = document.createElement("strong");
-        label.textContent = item.label;
-        const meta = document.createElement("span");
-        meta.textContent = `${item.start}s - ${item.start + item.duration}s`;
-
-        clip.append(label, meta);
-        track.appendChild(clip);
-      });
-
-      tracks.querySelectorAll<HTMLDivElement>(".timeline-track").forEach((track) => {
-        if (track.querySelector(".timeline-clip")) return;
-        const empty = document.createElement("div");
-        empty.className = "timeline-empty";
-        empty.textContent =
-          track.dataset.track === "camera-shot"
-            ? "Add camera shots to build a sequence"
-            : "Select object and add motion";
-        track.appendChild(empty);
-      });
-
-      status.textContent = `${items.length} clip${items.length === 1 ? "" : "s"} | ${totalDuration}s`;
-      setPlayhead(0);
-    },
-    setPlayhead,
-  };
-}
 
 export function createStudioApp({ root }: { root: HTMLDivElement }) {
   root.innerHTML = "";
@@ -1535,16 +140,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   const mountedTheatreShotPaneIds = new Set<string>();
   let productionPanel: ReturnType<typeof createProductionPanel> | null = null;
   let timelineDock: ReturnType<typeof createTimelineDock> | null = null;
-  let recording:
-    | {
-        recorder: MediaRecorder;
-        chunks: Blob[];
-        stopTimer: number;
-        restorePixelRatio: number;
-        restoreCamera: THREE.PerspectiveCamera;
-        restoreCameraAspect: number;
-      }
-    | null = null;
+  let recording: RecordingState | null = null;
 
   scene.background = new THREE.Color("#090b12");
 
@@ -1580,7 +176,10 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     transformEditor,
   );
 
-  root.appendChild(hierarchyPanel.getElement());
+  const hierarchyMount = document.createElement("div");
+  hierarchyMount.className = "hierarchy-mount";
+  root.appendChild(hierarchyMount);
+  hierarchyMount.appendChild(hierarchyPanel.getElement());
 
   hierarchyPanel.refresh();
 
@@ -1679,7 +278,9 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     };
 
     const objectKey = getTheatreObjectKey(node);
-    const theatreObject = theatreSheet.object(objectKey, props, { reconfigure: true });
+    const theatreObject = theatreSheet.object(objectKey, props, {
+      reconfigure: true,
+    });
     const unsubscribe = theatreObject.onValuesChange((values) => {
       node.root.position.set(
         values.position.x,
@@ -1734,12 +335,22 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
       { reconfigure: true },
     );
 
-    theatreMainCameraUnsubscribe = theatreMainCamera.onValuesChange((values) => {
-      camera.position.set(values.position.x, values.position.y, values.position.z);
-      camera.rotation.set(values.rotation.x, values.rotation.y, values.rotation.z);
-      camera.fov = values.camera.fov;
-      camera.updateProjectionMatrix();
-    });
+    theatreMainCameraUnsubscribe = theatreMainCamera.onValuesChange(
+      (values) => {
+        camera.position.set(
+          values.position.x,
+          values.position.y,
+          values.position.z,
+        );
+        camera.rotation.set(
+          values.rotation.x,
+          values.rotation.y,
+          values.rotation.z,
+        );
+        camera.fov = values.camera.fov;
+        camera.updateProjectionMatrix();
+      },
+    );
   }
 
   function unregisterTheatreObject(node: SceneNode) {
@@ -1763,6 +374,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     registry.register(node);
     registerTheatreObject(node);
     transformEditor.refresh();
+    hierarchyPanel.refresh();
     refreshProductionCameras();
     if (select) transformEditor.selectNode(node.id);
     return node;
@@ -1826,7 +438,9 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     refreshProductionCameras();
     resize();
     sceneBuilder.setStatus(
-      activeRenderCameraId === "main" ? "Viewing main camera" : "Viewing scene camera",
+      activeRenderCameraId === "main"
+        ? "Viewing main camera"
+        : "Viewing scene camera",
     );
   }
 
@@ -1847,7 +461,9 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     return (
       registry
         .getAll()
-        .filter((node) => (node.metadata.source as NodeSource)?.type !== "ambient")
+        .filter(
+          (node) => (node.metadata.source as NodeSource)?.type !== "ambient",
+        )
         .find((node) => node.name === name) ?? null
     );
   }
@@ -1863,124 +479,29 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     if (name === "Main View") return theatreMainCamera;
 
     const node = findSceneNodeByName(name);
-    return node ? theatreBindings.get(node.id)?.theatreObject ?? null : null;
-  }
-
-  function getLookAtRotation(
-    position: THREE.Vector3,
-    target: THREE.Vector3,
-    sourceCamera: THREE.PerspectiveCamera,
-  ) {
-    const previewCamera = sourceCamera.clone();
-    previewCamera.position.copy(position);
-    previewCamera.lookAt(target);
-    return previewCamera.rotation.clone();
-  }
-
-  function createCameraShotFrames(
-    shot: CameraShot,
-    duration: number,
-    sourceCamera: THREE.PerspectiveCamera,
-    targetNode: SceneNode | null,
-    initial: {
-      position: THREE.Vector3;
-      fov: number;
-    },
-  ) {
-    const target = targetNode
-      ? {
-          center: getObjectCenter(targetNode.root),
-          radius: getObjectRadius(targetNode.root),
-        }
-      : {
-          center: new THREE.Vector3(0, 0.75, 0),
-          radius: 2.5,
-        };
-    const startOffset = initial.position.clone().sub(target.center);
-    const orbitRadius = Math.max(startOffset.length(), target.radius * 3.2);
-    const startAngle = Math.atan2(startOffset.z, startOffset.x);
-    const direction = startOffset.clone().normalize();
-    const closePosition = target.center
-      .clone()
-      .add(direction.clone().multiplyScalar(target.radius * 1.75));
-    closePosition.y = target.center.y + target.radius * 0.72;
-    const dollyPosition = target.center
-      .clone()
-      .add(direction.clone().multiplyScalar(target.radius * 2.25));
-    const samples =
-      shot === "orbit" ? [0, 0.25, 0.5, 0.75, 1] : [0, 1];
-
-    return samples.map((progress) => {
-      const eased = easeInOutCubic(progress);
-      const position = initial.position.clone();
-      let fov = initial.fov;
-
-      if (shot === "orbit") {
-        const angle = startAngle + Math.PI * 2 * progress;
-        position.set(
-          target.center.x + Math.cos(angle) * orbitRadius,
-          initial.position.y,
-          target.center.z + Math.sin(angle) * orbitRadius,
-        );
-      } else if (shot === "dolly-in") {
-        position.lerpVectors(initial.position, dollyPosition, eased);
-      } else if (shot === "close-up") {
-        position.lerpVectors(initial.position, closePosition, eased);
-      } else if (shot === "dolly-zoom") {
-        position.lerpVectors(initial.position, closePosition, eased);
-        fov = THREE.MathUtils.lerp(initial.fov, Math.max(initial.fov * 0.42, 12), eased);
-      }
-
-      return {
-        offset: duration * progress,
-        position,
-        rotation: getLookAtRotation(position, target.center, sourceCamera),
-        fov,
-      };
-    });
+    return node ? (theatreBindings.get(node.id)?.theatreObject ?? null) : null;
   }
 
   function getCameraShotAnimations() {
-    return activeAnimations
-      .filter((animation) => animation.kind === "camera-shot")
-      .sort((first, second) => first.delay - second.delay);
+    return getCameraShotAnimationsFromState(activeAnimations);
   }
 
   function getTimelineDuration() {
-    return Math.max(
+    return getTimelineDurationFromState({
       cameraShotCursor,
-      ...activeAnimations
-        .filter((animation) => !animation.loop)
-        .map((animation) => animation.delay + animation.duration),
-      0,
-    );
+      activeAnimations,
+    });
   }
 
   function getCameraShotTimelineItems(): TimelineDockItem[] {
-    return getCameraShotAnimations().map((animation) => ({
-      id: animation.id,
-      label: animation.name,
-      cameraLabel: animation.metadata?.cameraLabel ?? "Main View",
-      targetLabel: animation.metadata?.targetLabel ?? "Scene center",
-      duration: animation.duration,
-      start: animation.delay,
-      kind: "camera-shot",
-      active: animation.id === activeShotId,
-    }));
+    return getCameraShotTimelineItemsFromState({
+      shots: getCameraShotAnimations(),
+      activeShotId,
+    });
   }
 
   function getObjectMotionTimelineItems(): TimelineDockItem[] {
-    return activeAnimations
-      .filter((animation) => animation.kind === "object-motion")
-      .map((animation) => ({
-        id: animation.id,
-        label: animation.name,
-        cameraLabel: "Object",
-        targetLabel: animation.metadata?.targetLabel ?? "Motion",
-        duration: animation.duration,
-        start: animation.delay,
-        kind: "object-motion",
-      }));
+    return getObjectMotionTimelineItemsFromState(activeAnimations);
   }
 
   function refreshShotList() {
@@ -2067,72 +588,23 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   function serializeTimeline(): SavedTimelineClip[] {
-    return activeAnimations
-      .filter(
-        (animation) =>
-          animation.kind === "camera-shot" || animation.kind === "object-motion",
-      )
-      .sort((first, second) => first.delay - second.delay)
-      .flatMap((animation): SavedTimelineClip[] => {
-        if (animation.kind === "camera-shot" && animation.metadata?.shot) {
-          return [
-            {
-              kind: "camera-shot",
-              shot: animation.metadata.shot,
-              start: animation.delay,
-              duration: animation.duration,
-              cameraName: animation.metadata.cameraLabel ?? "Main View",
-              ...(animation.metadata.targetLabel &&
-              animation.metadata.targetLabel !== "Scene center"
-                ? { targetName: animation.metadata.targetLabel }
-                : {}),
-            },
-          ];
-        }
-
-        if (
-          animation.kind === "object-motion" &&
-          animation.metadata?.preset &&
-          animation.metadata.targetLabel
-        ) {
-          return [
-            {
-              kind: "object-motion",
-              preset: animation.metadata.preset,
-              start: animation.delay,
-              duration: animation.duration,
-              targetName: animation.metadata.targetLabel,
-              loop: animation.loop,
-            },
-          ];
-        }
-
-        return [];
-      });
+    return serializeTimelineData(activeAnimations);
   }
 
   function clearTimeline() {
-    activeAnimations.splice(0, activeAnimations.length);
-    cameraShotCursor = 0;
-    timelinePosition = 0;
-    timelinePlaying = false;
-    activeShotId = null;
+    const nextState = clearTimelineState(activeAnimations);
+    cameraShotCursor = nextState.cameraShotCursor;
+    timelinePosition = nextState.timelinePosition;
+    timelinePlaying = nextState.timelinePlaying;
+    activeShotId = nextState.activeShotId;
     refreshShotList();
     timelineDock?.setPlayhead(0, 10);
   }
 
   function applyCameraShotOrder(shots: TimelineAnimation[]) {
-    cameraShotCursor = 0;
-
-    shots.forEach((shot) => {
-      shot.delay = cameraShotCursor;
-      shot.elapsed = 0;
-      shot.started = false;
-      shot.finished = false;
-      cameraShotCursor += shot.duration;
-    });
-
-    timelinePosition = 0;
+    const nextState = applyCameraShotOrderData(shots);
+    cameraShotCursor = nextState.cameraShotCursor;
+    timelinePosition = nextState.timelinePosition;
     refreshShotList();
   }
 
@@ -2141,7 +613,9 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   function removeCameraShot(shotId: string) {
-    const index = activeAnimations.findIndex((animation) => animation.id === shotId);
+    const index = activeAnimations.findIndex(
+      (animation) => animation.id === shotId,
+    );
     if (index < 0) return;
 
     activeAnimations.splice(index, 1);
@@ -2198,16 +672,12 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   function addTimelineAnimation(
-    animation: Omit<TimelineAnimation, "id" | "elapsed" | "started" | "finished">,
+    animation: Omit<
+      TimelineAnimation,
+      "id" | "elapsed" | "started" | "finished"
+    >,
   ) {
-    const nextAnimation = {
-      ...animation,
-      id: crypto.randomUUID(),
-      elapsed: 0,
-      started: false,
-      finished: false,
-    };
-
+    const nextAnimation = createTimelineAnimation(animation);
     activeAnimations.push(nextAnimation);
     timelinePlaying = true;
     refreshShotList();
@@ -2231,77 +701,25 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
       return;
     }
 
-    const object = node.root;
-    const startPosition = object.position.clone();
-    const startRotation = object.rotation.clone();
-    const startScale = object.scale.clone();
-    const material = getFirstStandardMaterial(object);
-    const startColor = material?.color.clone();
-    const targetColor = new THREE.Color("#6ee7ff");
-
-    addTimelineAnimation({
-      name: `${node.name} ${preset}`,
-      kind: "object-motion",
-      metadata: {
+    addTimelineAnimation(
+      createObjectMotionAnimation({
+        node,
         preset,
-        targetLabel: node.name,
-      },
-      delay:
-        options.delay ??
-        getCameraShotAnimations().find((shot) => shot.id === activeShotId)?.delay ??
-        0,
-      duration,
-      loop: options.loop ?? (preset === "spin" || preset === "float"),
-      update(progress) {
-        const eased = easeInOutCubic(progress);
-
-        if (preset === "spin") {
-          object.rotation.y = startRotation.y + Math.PI * 2 * progress;
-          return;
-        }
-
-        if (preset === "pulse") {
-          const pulse = 1 + Math.sin(progress * Math.PI) * 0.45;
-          object.scale.set(
-            startScale.x * pulse,
-            startScale.y * pulse,
-            startScale.z * pulse,
-          );
-          return;
-        }
-
-        if (preset === "float") {
-          object.position.y = startPosition.y + Math.sin(progress * Math.PI * 2) * 0.75;
-          return;
-        }
-
-        if (preset === "color-shift" && material && startColor) {
-          material.color.copy(startColor).lerp(targetColor, eased);
-          material.needsUpdate = true;
-        }
-      },
-      complete() {
-        if (preset === "pulse") object.scale.copy(startScale);
-      },
-    });
+        duration,
+        delay:
+          options.delay ??
+          getCameraShotAnimations().find((shot) => shot.id === activeShotId)
+            ?.delay ??
+          0,
+        loop: options.loop ?? (preset === "spin" || preset === "float"),
+      }),
+    );
 
     if (!options.silent) sceneBuilder.setStatus(`Motion added: ${preset}`);
   }
 
   function getShotTarget() {
-    const selected = selection.getSelected();
-
-    if (selected) {
-      return {
-        center: getObjectCenter(selected.root),
-        radius: getObjectRadius(selected.root),
-      };
-    }
-
-    return {
-      center: new THREE.Vector3(0, 0.75, 0),
-      radius: 2.5,
-    };
+    return getShotTargetFromSelection(selection.getSelected());
   }
 
   function applyCameraShot(
@@ -2312,6 +730,8 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
       delay?: number;
       silent?: boolean;
       targetName?: string;
+      orbitDegrees?: number;
+      distanceMultiplier?: number;
     } = {},
   ) {
     const shotCamera = options.cameraName
@@ -2320,15 +740,13 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     const selectedTarget = options.targetName
       ? findSceneNodeByName(options.targetName)
       : selection.getSelected();
-    let center = new THREE.Vector3();
-    let radius = 1;
-    let startPosition = new THREE.Vector3();
-    let startFov = shotCamera.fov;
-    let orbitRadius = 1;
-    let startAngle = 0;
-    let startHeight = 0;
-    let closePosition = new THREE.Vector3();
-    let dollyPosition = new THREE.Vector3();
+
+    let runtime = createShotRuntimeState({
+      shotCamera,
+      selectedTarget,
+      fallbackTarget: getShotTarget(),
+    });
+
     const delay = options.delay ?? cameraShotCursor;
     cameraShotCursor = Math.max(cameraShotCursor, delay + duration);
 
@@ -2343,59 +761,21 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
       delay,
       duration,
       loop: false,
+      orbitDegrees: options.orbitDegrees,
+      distanceMultiplier: options.distanceMultiplier,
       start() {
-        const target = selectedTarget
-          ? {
-              center: getObjectCenter(selectedTarget.root),
-              radius: getObjectRadius(selectedTarget.root),
-            }
-          : getShotTarget();
-        center = target.center;
-        radius = target.radius;
-        startPosition = shotCamera.position.clone();
-        startFov = shotCamera.fov;
-        const startOffset = startPosition.clone().sub(center);
-        orbitRadius = Math.max(startOffset.length(), radius * 3.2);
-        startAngle = Math.atan2(startOffset.z, startOffset.x);
-        startHeight = startPosition.y;
-        const direction = startPosition.clone().sub(center).normalize();
-        closePosition = center
-          .clone()
-          .add(direction.clone().multiplyScalar(radius * 1.75));
-        closePosition.y = center.y + radius * 0.72;
-        dollyPosition = center
-          .clone()
-          .add(direction.clone().multiplyScalar(radius * 2.25));
+        runtime = createShotRuntimeState({
+          shotCamera,
+          selectedTarget,
+          fallbackTarget: getShotTarget(),
+        });
       },
       update(progress) {
-        const eased = easeInOutCubic(progress);
-        const nextPosition = new THREE.Vector3();
-        let nextFov = startFov;
-
-        if (shot === "static") {
-          nextPosition.copy(startPosition);
-        } else if (shot === "orbit") {
-          const angle = startAngle + Math.PI * 2 * progress;
-          nextPosition.set(
-            center.x + Math.cos(angle) * orbitRadius,
-            startHeight,
-            center.z + Math.sin(angle) * orbitRadius,
-          );
-        }
-
-        if (shot === "dolly-in") {
-          nextPosition.copy(startPosition).lerp(dollyPosition, eased);
-        }
-
-        if (shot === "close-up") {
-          nextPosition.copy(startPosition).lerp(closePosition, eased);
-          nextFov = THREE.MathUtils.lerp(startFov, 28, eased);
-        }
-
-        if (shot === "dolly-zoom") {
-          nextPosition.copy(startPosition).lerp(dollyPosition, eased);
-          nextFov = THREE.MathUtils.lerp(startFov, 62, eased);
-        }
+        const { nextPosition, nextFov } = calculateCameraShotState({
+          shot,
+          progress,
+          ...runtime,
+        });
 
         shotCamera.fov = nextFov;
         shotCamera.updateProjectionMatrix();
@@ -2405,16 +785,16 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
             nextPosition.x,
             nextPosition.y,
             nextPosition.z,
-            center.x,
-            center.y,
-            center.z,
+            runtime.center.x,
+            runtime.center.y,
+            runtime.center.z,
             false,
           );
           return;
         }
 
         shotCamera.position.copy(nextPosition);
-        shotCamera.lookAt(center);
+        shotCamera.lookAt(runtime.center);
       },
     });
 
@@ -2440,11 +820,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   function rewindTimeline() {
-    activeAnimations.forEach((animation) => {
-      animation.elapsed = 0;
-      animation.started = false;
-      animation.finished = false;
-    });
+    resetTimelineAnimations(activeAnimations);
     timelinePosition = 0;
     timelineDock?.setPlayhead(timelinePosition, getTimelineDuration());
     timelinePlaying = true;
@@ -2524,22 +900,6 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     renderTheatreShotPane();
   }
 
-  function setTheatreObjectAt(
-    position: number,
-    theatreObject: ISheetObject<any>,
-    values: Record<string, unknown>,
-  ) {
-    if (!theatreSheet) return;
-
-    theatreSheet.sequence.position = position;
-    studio.transaction(({ set }) => {
-      const setValue = set as (pointer: unknown, value: unknown) => void;
-      Object.entries(values).forEach(([key, value]) => {
-        setValue((theatreObject.props as Record<string, unknown>)[key], value);
-      });
-    });
-  }
-
   function bakeShotsToTheatre() {
     if (!theatreSheet) {
       sceneBuilder.setStatus("Theatre is not ready");
@@ -2549,7 +909,8 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     const clips = activeAnimations
       .filter(
         (animation) =>
-          animation.kind === "camera-shot" || animation.kind === "object-motion",
+          animation.kind === "camera-shot" ||
+          animation.kind === "object-motion",
       )
       .slice()
       .sort((first, second) => first.delay - second.delay);
@@ -2576,171 +937,29 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
       >();
 
       studio.transaction(({ set }) => {
-        set(theatreSheet!.sequence.pointer.length, Math.max(getTimelineDuration(), 0.5));
+        set(
+          theatreSheet!.sequence.pointer.length,
+          Math.max(getTimelineDuration(), 0.5),
+        );
       });
 
       clips.forEach((clip) => {
-        if (clip.kind === "camera-shot" && clip.metadata?.shot) {
-          const cameraName = clip.metadata.cameraLabel ?? "Main View";
-          const sourceCamera = getCameraByName(cameraName);
-          const theatreCamera = getTheatreCameraByName(cameraName);
-          if (!theatreCamera) return;
+        bakeCameraShotToTheatre({
+          clip,
+          theatreSheet: theatreSheet!,
+          getCameraByName,
+          getTheatreCameraByName,
+          findSceneNodeByName,
+          cameraStates,
+        });
 
-          sequenceTheatrePrimitiveProps(theatreCamera, [
-            ["position", "x"],
-            ["position", "y"],
-            ["position", "z"],
-            ["rotation", "x"],
-            ["rotation", "y"],
-            ["rotation", "z"],
-            ["camera", "fov"],
-          ]);
-
-          const state = cameraStates.get(cameraName) ?? {
-            position: sourceCamera.position.clone(),
-            fov: sourceCamera.fov,
-          };
-          const targetNode =
-            clip.metadata.targetLabel &&
-            clip.metadata.targetLabel !== "Scene center"
-              ? findSceneNodeByName(clip.metadata.targetLabel)
-              : null;
-          const frames = createCameraShotFrames(
-            clip.metadata.shot,
-            clip.duration,
-            sourceCamera,
-            targetNode,
-            state,
-          );
-
-          frames.forEach((frame) => {
-            setTheatreObjectAt(clip.delay + frame.offset, theatreCamera, {
-              position: {
-                x: frame.position.x,
-                y: frame.position.y,
-                z: frame.position.z,
-              },
-              rotation: {
-                x: frame.rotation.x,
-                y: frame.rotation.y,
-                z: frame.rotation.z,
-              },
-              camera: { fov: frame.fov },
-            });
-          });
-
-          const lastFrame = frames[frames.length - 1];
-          cameraStates.set(cameraName, {
-            position: lastFrame.position.clone(),
-            fov: lastFrame.fov,
-          });
-          return;
-        }
-
-        if (
-          clip.kind !== "object-motion" ||
-          !clip.metadata?.preset ||
-          !clip.metadata.targetLabel
-        ) {
-          return;
-        }
-
-        const node = findSceneNodeByName(clip.metadata.targetLabel);
-        const binding = node ? theatreBindings.get(node.id) : null;
-        if (!node || !binding) return;
-
-        const material = getFirstStandardMaterial(node.root);
-        const state = objectStates.get(node.name) ?? {
-          position: node.root.position.clone(),
-          rotation: node.root.rotation.clone(),
-          scale: node.root.scale.clone(),
-          color: material?.color.clone() ?? null,
-          opacity: material?.opacity ?? 1,
-        };
-        const start = clip.delay;
-        const end = clip.delay + clip.duration;
-
-        if (clip.metadata.preset === "spin") {
-          sequenceTheatrePrimitiveProps(binding.theatreObject, [
-            ["rotation", "x"],
-            ["rotation", "y"],
-            ["rotation", "z"],
-          ]);
-          setTheatreObjectAt(start, binding.theatreObject, {
-            rotation: {
-              x: state.rotation.x,
-              y: state.rotation.y,
-              z: state.rotation.z,
-            },
-          });
-          state.rotation.y += Math.PI * 2;
-          setTheatreObjectAt(end, binding.theatreObject, {
-            rotation: {
-              x: state.rotation.x,
-              y: state.rotation.y,
-              z: state.rotation.z,
-            },
-          });
-        } else if (clip.metadata.preset === "pulse") {
-          sequenceTheatrePrimitiveProps(binding.theatreObject, [
-            ["scale", "x"],
-            ["scale", "y"],
-            ["scale", "z"],
-          ]);
-          [0, 0.5, 1].forEach((progress) => {
-            const multiplier = progress === 0.5 ? 1.45 : 1;
-            setTheatreObjectAt(
-              start + clip.duration * progress,
-              binding.theatreObject,
-              {
-                scale: {
-                  x: state.scale.x * multiplier,
-                  y: state.scale.y * multiplier,
-                  z: state.scale.z * multiplier,
-                },
-              },
-            );
-          });
-        } else if (clip.metadata.preset === "float") {
-          sequenceTheatrePrimitiveProps(binding.theatreObject, [
-            ["position", "x"],
-            ["position", "y"],
-            ["position", "z"],
-          ]);
-          [0, 0.25, 0.5, 0.75, 1].forEach((progress) => {
-            setTheatreObjectAt(
-              start + clip.duration * progress,
-              binding.theatreObject,
-              {
-                position: {
-                  x: state.position.x,
-                  y:
-                    state.position.y +
-                    Math.sin(progress * Math.PI * 2) * 0.75,
-                  z: state.position.z,
-                },
-              },
-            );
-          });
-        } else if (clip.metadata.preset === "color-shift" && state.color) {
-          sequenceTheatrePrimitiveProps(binding.theatreObject, [
-            ["material", "color"],
-          ]);
-          const targetColor = new THREE.Color("#6ee7ff");
-          setTheatreObjectAt(start, binding.theatreObject, {
-            material: {
-              color: colorToRgba(state.color, state.opacity),
-            },
-          });
-          setTheatreObjectAt(end, binding.theatreObject, {
-            material: {
-              color: colorToRgba(targetColor, state.opacity),
-            },
-          });
-          state.color.copy(targetColor);
-        }
-
-        objectStates.set(node.name, state);
+        bakeObjectMotionToTheatre({
+          clip,
+          theatreSheet: theatreSheet!,
+          findSceneNodeByName,
+          theatreBindings,
+          objectStates,
+        });
       });
 
       theatreSheet.sequence.position = 0;
@@ -2752,12 +971,6 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
       console.error(error);
       sceneBuilder.setStatus("Bake to Theatre failed");
     }
-  }
-
-  function getRecordingSize(aspect: RecordingAspect) {
-    return aspect === "9:16"
-      ? { width: 720, height: 1280 }
-      : { width: 1280, height: 720 };
   }
 
   function restoreRecordingViewport() {
@@ -2772,13 +985,17 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     resize();
   }
 
-  function startRecording(aspect: RecordingAspect, seconds: number, fps: number) {
+  function startRecording(
+    aspect: RecordingAspect,
+    seconds: number,
+    fps: number,
+  ) {
     if (recording) {
       productionPanel?.setStatus("Already recording");
       return;
     }
 
-    if (!("captureStream" in renderer.domElement) || typeof MediaRecorder === "undefined") {
+    if (!isRecordingSupported(renderer.domElement)) {
       productionPanel?.setStatus("Recording is not supported in this browser");
       return;
     }
@@ -2811,13 +1028,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     };
 
     recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `dehlero-${aspect.replace(":", "x")}-${Date.now()}.webm`;
-      link.click();
-      URL.revokeObjectURL(url);
+      createRecordingDownload({ chunks, mimeType, aspect });
       stream.getTracks().forEach((track) => track.stop());
       restoreRecordingViewport();
       productionPanel?.setStatus("Recording saved");
@@ -2867,6 +1078,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     }
 
     refreshProductionCameras();
+    hierarchyPanel.refresh();
   }
 
   function updateHelperVisibility(selectedNode: SceneNode | null) {
@@ -2883,64 +1095,43 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     studio.setSelection(binding ? [binding.theatreObject] : [theatreSheet]);
   }
 
-  function findNodeFromObject(object: THREE.Object3D) {
-    return registry
-      .getAll()
-      .filter((node) => (node.metadata.source as NodeSource)?.type !== "ambient")
-      .find((node) => node.root === object || node.root.children.includes(object) || node.root.getObjectById(object.id));
-  }
-
-  function pickNode(event: PointerEvent) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-    const nodes = registry
-      .getAll()
-      .filter((node) => (node.metadata.source as NodeSource)?.type !== "ambient");
-
-    raycaster.setFromCamera(pointer, getActiveRenderCamera());
-    const intersects = raycaster.intersectObjects(
-      nodes.map((node) => node.root),
-      true,
-    );
-
-    return intersects.length > 0 ? findNodeFromObject(intersects[0].object) : null;
-  }
-
-  renderer.domElement.addEventListener("pointerdown", (event) => {
-    pointerDown.set(event.clientX, event.clientY);
-    didDragTransform = false;
-  });
-
-  renderer.domElement.addEventListener("pointerup", (event) => {
-    if (event.button !== 0 || didDragTransform) return;
-    if (pointerDown.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 4) return;
-
-    const node = pickNode(event);
-
-    if (node) {
-      transformEditor.selectNode(node.id);
-      return;
-    }
-
-    transformEditor.clearSelection();
-  });
-
-  renderer.domElement.addEventListener("contextmenu", (event) => {
-    event.preventDefault();
-    const node = pickNode(event);
-
-    if (node) {
-      transformEditor.selectNode(node.id);
-      transformEditor.deleteSelected();
-    }
+  attachPickingEvents({
+    renderer,
+    pointerDown,
+    didDragTransform,
+    setDidDragTransform(value) {
+      didDragTransform = value;
+    },
+    selectNode(nodeId) {
+      transformEditor.selectNode(nodeId);
+    },
+    clearSelection() {
+      transformEditor.clearSelection();
+    },
+    deleteNode(nodeId) {
+      const node = registry.get(nodeId);
+      if (node) deleteNode(node);
+    },
+    pickNode(event) {
+      return (
+        pickNodeFromScene({
+          event,
+          renderer,
+          camera: getActiveRenderCamera(),
+          raycaster,
+          pointer,
+          nodes: registry.getAll(),
+        }) ?? null
+      );
+    },
   });
 
   function clearEditableScene() {
     registry
       .getAll()
-      .filter((node) => (node.metadata.source as NodeSource)?.type !== "ambient")
+      .filter(
+        (node) => (node.metadata.source as NodeSource)?.type !== "ambient",
+      )
       .forEach((node) => {
         deleteNode(node);
         registry.unregister(node.id);
@@ -2948,30 +1139,16 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
 
     selection.clear();
     transformEditor.refresh();
+    hierarchyPanel.refresh();
     clearTimeline();
   }
 
   function serializeScene(): SavedScene {
-    const objects = registry
-      .getAll()
-      .filter((node) => (node.metadata.source as NodeSource)?.type !== "ambient")
-      .map((node): SavedObject => {
-        const texture = node.metadata.texture as SavedObject["texture"];
-
-        return {
-          name: node.name,
-          source: node.metadata.source as NodeSource,
-          transform: serializeTransform(node.root),
-          ...(texture ? { texture } : {}),
-        };
-      });
-
-    return {
-      version: 2,
-      name: sceneBuilder.getSceneName(),
-      objects,
-      timeline: serializeTimeline(),
-    };
+    return serializeSceneData({
+      sceneName: sceneBuilder.getSceneName(),
+      nodes: registry.getAll(),
+      serializeTimeline,
+    });
   }
 
   function saveScene() {
@@ -2979,13 +1156,9 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     if (theatreMainCamera?.address.objectKey !== expectedMainCameraKey) {
       registerTheatreMainCamera();
     }
+
     const savedScene = serializeScene();
-    localStorage.setItem(
-      createProjectStorageKey(savedScene.name),
-      JSON.stringify(savedScene),
-    );
-    addProjectName(savedScene.name);
-    localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, savedScene.name);
+    saveSceneToStorage(savedScene);
     sceneBuilder.refreshProjects(savedScene.name);
     sceneBuilder.setStatus(`Saved: ${savedScene.name}`);
   }
@@ -2995,38 +1168,8 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     if (theatreMainCamera?.address.objectKey !== expectedMainCameraKey) {
       registerTheatreMainCamera();
     }
-    const savedScene = serializeScene();
-    localStorage.setItem(
-      createProjectStorageKey(savedScene.name),
-      JSON.stringify(savedScene),
-    );
-    addProjectName(savedScene.name);
-  }
 
-  async function createObjectFromSaved(savedObject: SavedObject) {
-    const { source } = savedObject;
-
-    if (source.type === "library") {
-      const item = library.find(
-        (candidate) => candidate.id === source.libraryId,
-      );
-
-      if (!item) throw new Error(`Missing library item: ${savedObject.name}`);
-      return item.create();
-    }
-
-    if (source.type === "model") {
-      const blob = await loadAssetBlob(source.assetKey);
-      const file = new File([blob], source.fileName);
-      return normalizeImportedObject(await loadModelFile(file));
-    }
-
-    if (source.type === "textured-planet") {
-      const blob = await loadAssetBlob(source.assetKey);
-      return createPlanet(loadTextureFromBlob(blob));
-    }
-
-    throw new Error(`Unsupported saved object: ${savedObject.name}`);
+    saveCurrentSceneToStorage(serializeScene());
   }
 
   function restoreTimeline(timeline: SavedTimelineClip[] | undefined) {
@@ -3071,20 +1214,15 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     registerTheatreMainCamera();
 
     for (const savedObject of savedScene.objects) {
-      const object = await createObjectFromSaved(savedObject);
-      object.name = savedObject.name;
-      applySavedTransform(object, savedObject.transform);
-
-      if (savedObject.texture) {
-        const blob = await loadAssetBlob(savedObject.texture.assetKey);
-        applyTextureToObject(object, loadTextureFromBlob(blob));
-      }
-
-      const node = attachObject(savedObject.name, object, savedObject.source);
-      if (savedObject.texture) node.metadata.texture = savedObject.texture;
+      await applySavedObjectToScene({
+        savedObject,
+        library,
+        attachObject,
+      });
     }
 
     transformEditor.refresh();
+    hierarchyPanel.refresh();
     transformEditor.clearSelection();
     restoreTimeline(savedScene.timeline);
     sceneBuilder.setStatus(`Loaded: ${savedScene.name}`);
@@ -3092,7 +1230,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
 
   function loadScene() {
     const projectName = sceneBuilder.getSelectedProjectName();
-    const savedScene = projectName ? loadProjectByName(projectName) : null;
+    const savedScene = projectName ? getSavedProject(projectName) : null;
 
     if (!savedScene) {
       sceneBuilder.setStatus("No saved scene");
@@ -3110,7 +1248,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     if (projectName === currentName) return;
 
     saveCurrentSceneSilently();
-    const savedScene = loadProjectByName(projectName);
+    const savedScene = getSavedProject(projectName);
 
     if (!savedScene) {
       sceneBuilder.setStatus("Selected scene was not found");
@@ -3129,7 +1267,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   function newScene() {
     saveCurrentSceneSilently();
     clearEditableScene();
-    const nextName = `Untitled Scene ${getProjectNames().length + 1}`;
+    const nextName = getNextUntitledSceneName();
     sceneBuilder.setSceneName(nextName);
     registerTheatreMainCamera();
     addDefaultProjectObjects();
@@ -3140,21 +1278,14 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
 
   async function importModel(file: File) {
     try {
-      const assetKey = createAssetKey(file);
-      await saveAssetBlob(assetKey, file);
-
-      const loadedObject = await loadModelFile(file);
-      const object = normalizeImportedObject(loadedObject);
-      object.name = file.name.replace(/\.[^.]+$/, "");
-      placeObject(object, nextObjectIndex);
-      nextObjectIndex += 1;
-
-      attachObject(uniqueName(object.name || "Imported Model"), object, {
-        type: "model",
-        assetKey,
-        fileName: file.name,
+      await importModelObject({
+        file,
+        nextObjectIndex,
+        attachObject,
+        uniqueName,
+        setStatus: sceneBuilder.setStatus,
       });
-      sceneBuilder.setStatus(`Imported ${file.name}`);
+      nextObjectIndex += 1;
     } catch (error) {
       console.error(error);
       sceneBuilder.setStatus("Import failed");
@@ -3162,37 +1293,32 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   async function applyTexture(file: File) {
-    const selected = selection.getSelected();
-    if (!selected) {
-      sceneBuilder.setStatus("Select an object first");
-      return;
+    try {
+      await applyTextureToSelectedObject({
+        file,
+        selected: selection.getSelected(),
+        setStatus: sceneBuilder.setStatus,
+      });
+    } catch (error) {
+      console.error(error);
+      sceneBuilder.setStatus("Texture failed");
     }
-
-    const assetKey = createAssetKey(file);
-    await saveAssetBlob(assetKey, file);
-
-    const texture = loadTextureFile(file);
-    applyTextureToObject(selected.root, texture);
-    selected.metadata.texture = { assetKey, fileName: file.name };
-    sceneBuilder.setStatus(`Texture applied: ${file.name}`);
   }
 
   async function createPlanetFromTexture(file: File) {
-    const assetKey = createAssetKey(file);
-    await saveAssetBlob(assetKey, file);
-
-    const texture = loadTextureFile(file);
-    const planet = createPlanet(texture);
-    planet.name = file.name.replace(/\.[^.]+$/, "");
-    placeObject(planet, nextObjectIndex);
-    nextObjectIndex += 1;
-
-    attachObject(uniqueName("Textured Planet"), planet, {
-      type: "textured-planet",
-      assetKey,
-      fileName: file.name,
-    });
-    sceneBuilder.setStatus(`Planet created: ${file.name}`);
+    try {
+      await createTexturedPlanetObject({
+        file,
+        nextObjectIndex,
+        attachObject,
+        uniqueName,
+        setStatus: sceneBuilder.setStatus,
+      });
+      nextObjectIndex += 1;
+    } catch (error) {
+      console.error(error);
+      sceneBuilder.setStatus("Planet texture failed");
+    }
   }
 
   function addDefaultProjectObjects() {
@@ -3304,12 +1430,16 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   migrateLegacySceneStorage();
-  sceneBuilder.refreshProjects(localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) ?? undefined);
+  sceneBuilder.refreshProjects(
+    localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) ?? undefined,
+  );
 
   registerObject("Ambient Light", ambient, { type: "ambient" }, false);
 
   const activeProjectName = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-  const activeScene = activeProjectName ? loadProjectByName(activeProjectName) : null;
+  const activeScene = activeProjectName
+    ? loadProjectByName(activeProjectName)
+    : null;
 
   if (activeScene) {
     void loadSavedScene(activeScene).catch((error) => {
@@ -3345,36 +1475,11 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     if (timelinePlaying) {
       const timelineDuration = getTimelineDuration();
       timelinePosition =
-        timelineDuration > 0 ? Math.min(timelinePosition + delta, timelineDuration) : 0;
+        timelineDuration > 0
+          ? Math.min(timelinePosition + delta, timelineDuration)
+          : 0;
 
-      for (let index = activeAnimations.length - 1; index >= 0; index -= 1) {
-        const animation = activeAnimations[index];
-        if (animation.finished) continue;
-
-        animation.elapsed += delta;
-        if (animation.elapsed < animation.delay) continue;
-
-        if (!animation.started) {
-          animation.started = true;
-          animation.start?.();
-        }
-
-        const localElapsed = animation.elapsed - animation.delay;
-        const progress = Math.min(localElapsed / animation.duration, 1);
-        animation.update(progress, delta);
-
-        if (progress >= 1) {
-          animation.complete?.();
-
-          if (animation.loop) {
-            animation.elapsed = 0;
-          } else if (animation.kind === "camera-shot") {
-            animation.finished = true;
-          } else {
-            activeAnimations.splice(index, 1);
-          }
-        }
-      }
+      updateTimelineAnimations({ activeAnimations, delta });
     }
 
     timelineDock?.setPlayhead(timelinePosition, getTimelineDuration() || 10);
