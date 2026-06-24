@@ -49,9 +49,14 @@ export type CameraShot =
   | "static"
   | "orbit"
   | "dolly-in"
+  | "dolly-out"
   | "close-up"
-  | "dolly-zoom";
-
+  | "dolly-zoom"
+  | "pan-left"
+  | "pan-right"
+  | "crane-up"
+  | "crane-down"
+  | "hero";
 export type RecordingAspect = "16:9" | "9:16";
 
 export type WorkspaceMode = "scene" | "shots" | "animate" | "record";
@@ -59,6 +64,8 @@ export type WorkspaceMode = "scene" | "shots" | "animate" | "record";
 export type CameraShotRigOptions = {
   orbitDegrees?: number;
   distanceMultiplier?: number;
+  heightMultiplier?: number;
+  fov?: number;
 };
 
 export type SavedTimelineClip =
@@ -93,6 +100,10 @@ export type ShotListItem = {
   targetLabel: string;
   duration: number;
   active?: boolean;
+  orbitDegrees?: number;
+  distanceMultiplier?: number;
+  heightMultiplier?: number;
+  fov?: number;
 };
 
 export type TimelineDockItem = ShotListItem & {
@@ -121,6 +132,8 @@ export type TimelineAnimation = {
   complete?: () => void;
   orbitDegrees?: number;
   distanceMultiplier?: number;
+  heightMultiplier?: number;
+  fov?: number;
 };
 
 export type TheatreBinding = {

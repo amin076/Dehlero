@@ -32,6 +32,7 @@ import type {
   TheatreBinding,
   TimelineAnimation,
   TimelineDockItem,
+  CameraShotRigOptions,
 } from "./studioTypes";
 
 import { createLibrary } from "./studioLibrary";
@@ -656,6 +657,25 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     sceneBuilder.setStatus("Shot duration updated");
   }
 
+  function updateCameraShotRigOptions(
+    shotId: string,
+    options: CameraShotRigOptions,
+  ) {
+    const shot = getCameraShotAnimations().find(
+      (animation) => animation.id === shotId,
+    );
+
+    if (!shot) return;
+
+    shot.orbitDegrees = options.orbitDegrees;
+    shot.distanceMultiplier = options.distanceMultiplier;
+    shot.heightMultiplier = options.heightMultiplier;
+    shot.fov = options.fov;
+
+    refreshShotList();
+    sceneBuilder.setStatus("Shot parameters updated");
+  }
+
   function addShot(duration: number) {
     applyCameraShot("static", duration);
   }
@@ -732,6 +752,8 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
       targetName?: string;
       orbitDegrees?: number;
       distanceMultiplier?: number;
+      heightMultiplier?: number;
+      fov?: number;
     } = {},
   ) {
     const shotCamera = options.cameraName
@@ -750,7 +772,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     const delay = options.delay ?? cameraShotCursor;
     cameraShotCursor = Math.max(cameraShotCursor, delay + duration);
 
-    addTimelineAnimation({
+    const nextAnimation = addTimelineAnimation({
       name: CAMERA_SHOT_LABELS[shot],
       kind: "camera-shot",
       metadata: {
@@ -763,6 +785,8 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
       loop: false,
       orbitDegrees: options.orbitDegrees,
       distanceMultiplier: options.distanceMultiplier,
+      heightMultiplier: options.heightMultiplier,
+      fov: options.fov,
       start() {
         runtime = createShotRuntimeState({
           shotCamera,
@@ -775,6 +799,12 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
           shot,
           progress,
           ...runtime,
+          options: {
+            orbitDegrees: nextAnimation.orbitDegrees,
+            distanceMultiplier: nextAnimation.distanceMultiplier,
+            heightMultiplier: nextAnimation.heightMultiplier,
+            fov: nextAnimation.fov,
+          },
         });
 
         shotCamera.fov = nextFov;
@@ -1363,6 +1393,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     moveCameraShot,
     selectCameraShot,
     updateCameraShotDuration,
+    updateCameraShotRigOptions,
   });
 
   timelineDock = createTimelineDock({

@@ -61,6 +61,10 @@ export function getCameraShotTimelineItems({
     start: animation.delay,
     kind: "camera-shot",
     active: animation.id === activeShotId,
+    orbitDegrees: animation.orbitDegrees,
+    distanceMultiplier: animation.distanceMultiplier,
+    heightMultiplier: animation.heightMultiplier,
+    fov: animation.fov,
   }));
 }
 
