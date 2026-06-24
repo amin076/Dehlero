@@ -22,7 +22,8 @@ canvas {
 }
 
 .asset-library-panel,
-.transform-editor-panel {
+.transform-editor-panel,
+.production-panel {
   position: fixed;
   box-sizing: border-box;
   color: white;
@@ -52,6 +53,18 @@ canvas {
   top: 12px;
   width: min(248px, calc(100vw - 24px));
   max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+
+.production-panel {
+  z-index: 21;
+  right: 12px;
+  bottom: 12px;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(58vh, calc(100vh - 300px));
+  padding: 10px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
@@ -127,6 +140,7 @@ canvas {
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
+.production-panel label,
 .project-panel label {
   display: grid;
   gap: 5px;
@@ -137,7 +151,9 @@ canvas {
 }
 
 .project-panel input,
-.project-panel select {
+.project-panel select,
+.production-panel input,
+.production-panel select {
   min-height: 30px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: white;
@@ -178,7 +194,9 @@ canvas {
 
 .asset-library-panel button,
 .transform-editor-panel button,
-.transform-editor-panel select {
+.transform-editor-panel select,
+.production-panel button,
+.production-panel select {
   min-height: 30px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: white;
@@ -188,13 +206,344 @@ canvas {
 }
 
 .asset-library-panel button,
-.transform-editor-panel button {
+.transform-editor-panel button,
+.production-panel button {
   cursor: pointer;
 }
 
 .asset-library-panel button:hover,
-.transform-editor-panel button:hover {
+.transform-editor-panel button:hover,
+.production-panel button:hover {
   background: rgba(51, 65, 85, 0.92);
+}
+
+.production-section {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.production-section-primary {
+  margin-top: 0;
+  padding: 8px;
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.26);
+  border-radius: 6px;
+}
+
+.production-section-title {
+  color: rgba(226, 232, 240, 0.74);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.production-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.production-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.production-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.recording-options {
+  display: grid;
+  grid-template-columns: 1fr 0.72fr 0.58fr;
+  gap: 6px;
+}
+
+.shot-list {
+  display: grid;
+  gap: 5px;
+  max-height: 136px;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.36) transparent;
+}
+
+.shot-empty {
+  padding: 8px;
+  color: rgba(226, 232, 240, 0.58);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.shot-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 7px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 5px;
+}
+
+.shot-details {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.shot-details strong,
+.shot-details span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shot-details strong {
+  color: rgba(248, 250, 252, 0.94);
+  font-size: 11px;
+}
+
+.shot-details span {
+  color: rgba(203, 213, 225, 0.62);
+  font-size: 10px;
+}
+
+.shot-actions {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 3px;
+}
+
+.production-panel .shot-actions button {
+  min-width: 30px;
+  min-height: 24px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.timeline-dock {
+  position: fixed;
+  z-index: 19;
+  left: 276px;
+  right: 356px;
+  bottom: 12px;
+  min-width: 420px;
+  box-sizing: border-box;
+  padding: 10px;
+  color: white;
+  background: rgba(8, 12, 20, 0.88);
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 6px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34);
+  font-size: 12px;
+}
+
+.timeline-dock-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.timeline-dock-title {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.timeline-dock-title::after {
+  margin-left: 8px;
+  color: rgba(147, 197, 253, 0.72);
+  font-size: 10px;
+  font-weight: 600;
+  content: "cuts and presets";
+}
+
+.timeline-dock-status {
+  margin-top: 2px;
+  color: rgba(203, 213, 225, 0.66);
+  font-size: 11px;
+}
+
+.timeline-time {
+  min-width: 58px;
+  padding: 5px 8px;
+  color: #fed7aa;
+  background: rgba(249, 115, 22, 0.12);
+  border: 1px solid rgba(249, 115, 22, 0.24);
+  border-radius: 5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.timeline-dock-controls {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 5px;
+}
+
+.timeline-dock button {
+  min-height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: white;
+  background: rgba(30, 41, 59, 0.74);
+  border-radius: 5px;
+  padding: 0 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.timeline-dock button:hover {
+  background: rgba(51, 65, 85, 0.92);
+}
+
+.timeline-dock-body {
+  position: relative;
+  display: grid;
+  gap: 4px;
+}
+
+.timeline-ruler {
+  position: relative;
+  height: 20px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.timeline-tick {
+  position: absolute;
+  bottom: 2px;
+  transform: translateX(-50%);
+  color: rgba(203, 213, 225, 0.66);
+  font-size: 10px;
+}
+
+.timeline-tick::before {
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 1px;
+  height: 6px;
+  background: rgba(148, 163, 184, 0.35);
+  content: "";
+}
+
+.timeline-tracks {
+  position: relative;
+  display: grid;
+  gap: 4px;
+}
+
+.timeline-track-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 6px;
+  align-items: stretch;
+}
+
+.timeline-track-label {
+  display: grid;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 8px;
+  color: rgba(226, 232, 240, 0.72);
+  background: rgba(15, 23, 42, 0.68);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.timeline-track {
+  position: relative;
+  min-height: 42px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    rgba(15, 23, 42, 0.7);
+  background-size: 10% 100%;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 5px;
+}
+
+.timeline-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(203, 213, 225, 0.5);
+  font-size: 11px;
+}
+
+.timeline-clip {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  min-width: 46px;
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: 0 8px;
+  overflow: hidden;
+  background: rgba(59, 130, 246, 0.82);
+  border: 1px solid rgba(191, 219, 254, 0.36);
+  border-radius: 5px;
+}
+
+.timeline-clip-object-motion {
+  background: rgba(20, 184, 166, 0.78);
+  border-color: rgba(153, 246, 228, 0.36);
+}
+
+.timeline-clip strong,
+.timeline-clip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-clip strong {
+  font-size: 11px;
+}
+
+.timeline-clip span {
+  color: rgba(239, 246, 255, 0.76);
+  font-size: 10px;
+}
+
+.timeline-playhead {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: 92px;
+  width: 2px;
+  background: #f97316;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.28);
+}
+
+.timeline-playhead::before {
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  background: #f97316;
+  border-radius: 2px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  content: "";
+}
+
+@media (max-width: 1100px) {
+  .timeline-dock {
+    left: 12px;
+    right: 12px;
+    min-width: 0;
+  }
 }
 
 .asset-button {
@@ -365,4 +714,298 @@ canvas {
   border-radius: 6px;
   font-size: 11px;
   line-height: 1.35;
+}
+
+/* Application workspace layout */
+.studio-shell {
+  --topbar-height: 48px;
+  --left-panel-width: 264px;
+  --right-panel-width: 280px;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #090b12;
+}
+
+.workspace-bar {
+  position: fixed;
+  z-index: 200;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--topbar-height);
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 1fr);
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  color: #f8fafc;
+  background: #111722;
+  border-bottom: 1px solid #303949;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.workspace-brand {
+  display: grid;
+  min-width: 0;
+}
+
+.workspace-brand strong {
+  font-size: 13px;
+}
+
+.workspace-brand span {
+  overflow: hidden;
+  color: #8995a8;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-tabs,
+.workspace-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.workspace-actions {
+  justify-content: flex-end;
+}
+
+.workspace-bar button {
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 0 11px;
+  color: #cbd5e1;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.workspace-bar button:hover {
+  color: white;
+  background: #1e293b;
+}
+
+.workspace-bar button.is-active,
+.workspace-bar [data-action="save"] {
+  color: white;
+  background: #263449;
+  border-color: #43516a;
+}
+
+.studio-shell .dehlero-viewport {
+  top: var(--topbar-height);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transition: inset 160ms ease;
+}
+
+.studio-shell[data-workspace="scene"][data-assets-open="true"] .dehlero-viewport {
+  left: var(--left-panel-width);
+}
+
+.studio-shell[data-workspace="scene"][data-inspector-open="true"] .dehlero-viewport {
+  right: var(--right-panel-width);
+}
+
+.studio-shell[data-workspace="shots"] .dehlero-viewport {
+  left: 320px;
+  right: var(--right-panel-width);
+  bottom: 170px;
+}
+
+.studio-shell[data-workspace="record"] .dehlero-viewport {
+  left: 320px;
+}
+
+.studio-shell[data-workspace="animate"] .dehlero-viewport {
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.studio-shell .asset-library-panel,
+.studio-shell .transform-editor-panel,
+.studio-shell .production-panel,
+.studio-shell .timeline-dock {
+  top: calc(var(--topbar-height) + 8px);
+  bottom: 8px;
+  max-height: none;
+  border-radius: 5px;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.studio-shell .asset-library-panel {
+  left: 8px;
+  width: calc(var(--left-panel-width) - 16px);
+}
+
+.studio-shell .transform-editor-panel {
+  right: 8px;
+  width: calc(var(--right-panel-width) - 16px);
+}
+
+.studio-shell .production-panel {
+  left: 8px;
+  right: auto;
+  width: 304px;
+  padding: 10px;
+}
+
+.studio-shell .timeline-dock {
+  top: auto;
+  left: 328px;
+  right: calc(var(--right-panel-width) + 8px);
+  bottom: 8px;
+  min-width: 0;
+  height: 154px;
+}
+
+.studio-shell .asset-library-panel,
+.studio-shell .transform-editor-panel,
+.studio-shell .production-panel,
+.studio-shell .timeline-dock {
+  display: none;
+}
+
+.studio-shell[data-workspace="scene"][data-assets-open="true"] .asset-library-panel,
+.studio-shell[data-workspace="scene"][data-inspector-open="true"] .transform-editor-panel,
+.studio-shell[data-workspace="shots"] .production-panel,
+.studio-shell[data-workspace="shots"][data-inspector-open="true"] .transform-editor-panel,
+.studio-shell[data-workspace="shots"] .timeline-dock,
+.studio-shell[data-workspace="record"] .production-panel {
+  display: block;
+}
+
+.studio-shell[data-workspace="shots"] .production-panel [data-tool-section="record"],
+.studio-shell[data-workspace="record"] .production-panel [data-tool-section="shots"],
+.studio-shell[data-workspace="record"] .production-panel [data-tool-section="playback"] {
+  display: none;
+}
+
+.studio-shell[data-workspace="record"] .production-panel [data-tool-section="camera"],
+.studio-shell[data-workspace="record"] .production-panel [data-tool-section="record"] {
+  display: grid;
+}
+
+.production-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.production-panel .compact-button {
+  min-height: 25px;
+  padding: 0 8px;
+}
+
+.shot-row {
+  cursor: pointer;
+}
+
+.shot-row.is-active {
+  background: rgba(37, 99, 235, 0.22);
+  border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: inset 3px 0 #60a5fa;
+}
+
+.shot-duration {
+  width: 64px;
+  min-height: 24px;
+  box-sizing: border-box;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+  padding: 0 6px;
+  color: #e2e8f0;
+  background: #111827;
+  font: inherit;
+  font-size: 10px;
+}
+
+#theatrejs-studio-root {
+  top: 48px !important;
+  z-index: 100 !important;
+}
+
+body:has(.studio-shell:not([data-workspace="animate"])) #theatrejs-studio-root {
+  display: none !important;
+}
+
+@media (max-width: 900px) {
+  .workspace-bar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .workspace-brand {
+    display: none;
+  }
+
+  .workspace-actions [data-panel-toggle] {
+    display: none;
+  }
+
+  .studio-shell {
+    --left-panel-width: min(260px, 72vw);
+    --right-panel-width: min(280px, 74vw);
+  }
+
+  .studio-shell[data-workspace="shots"] .dehlero-viewport,
+  .studio-shell[data-workspace="record"] .dehlero-viewport {
+    left: 0;
+    right: 0;
+  }
+
+  .studio-shell .production-panel {
+    width: min(304px, calc(100vw - 16px));
+  }
+
+  .studio-shell .timeline-dock {
+    left: 8px;
+    right: 8px;
+  }
+}
+.hierarchy-panel {
+  position: absolute;
+  top: 60px;
+  left: 12px;
+
+  width: 260px;
+  max-height: 70vh;
+
+  overflow: auto;
+
+  background: rgba(0,0,0,.75);
+
+  border: 1px solid #444;
+
+  border-radius: 8px;
+
+  padding: 8px;
+
+  color: white;
+
+  font-family: sans-serif;
+
+  z-index: 100;
+}
+
+.hierarchy-row {
+  padding: 4px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hierarchy-row:hover {
+  background: rgba(255,255,255,.08);
+}
+
+.hierarchy-selected {
+  background: rgba(0,150,255,.35);
 }
