@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { HierarchyPanel } from "../editor/HierarchyPanel";
 import CameraControls from "camera-controls";
 import { getProject, types } from "@theatre/core";
 import type { ISheet, ISheetObject } from "@theatre/core";
@@ -1573,6 +1574,15 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     onDeleteNode: deleteNode,
     onSelectionChange: updateHelperVisibility,
   });
+  const hierarchyPanel = new HierarchyPanel(
+    registry,
+    selection,
+    transformEditor,
+  );
+
+  root.appendChild(hierarchyPanel.getElement());
+
+  hierarchyPanel.refresh();
 
   transformEditor.controls.addEventListener("dragging-changed", (event) => {
     if ((event as { value?: boolean }).value) didDragTransform = true;

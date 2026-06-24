@@ -971,3 +971,41 @@ body:has(.studio-shell:not([data-workspace="animate"])) #theatrejs-studio-root {
     right: 8px;
   }
 }
+.hierarchy-panel {
+  position: absolute;
+  top: 60px;
+  left: 12px;
+
+  width: 260px;
+  max-height: 70vh;
+
+  overflow: auto;
+
+  background: rgba(0,0,0,.75);
+
+  border: 1px solid #444;
+
+  border-radius: 8px;
+
+  padding: 8px;
+
+  color: white;
+
+  font-family: sans-serif;
+
+  z-index: 100;
+}
+
+.hierarchy-row {
+  padding: 4px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hierarchy-row:hover {
+  background: rgba(255,255,255,.08);
+}
+
+.hierarchy-selected {
+  background: rgba(0,150,255,.35);
+}

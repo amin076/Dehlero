@@ -131,22 +131,35 @@ export function createTransformEditor({
     pane.refresh?.();
   }
 
-  function selectNode(id: string) {
-    const node = registry.get(id);
-    if (!node) return;
+ function selectNode(id: string) {
+   const node = registry.get(id);
 
-    params.selectedNodeId = id;
-    selection.select(node);
-    controls.attach(node.root);
-    onSelectionChange?.(node);
-    pane.refresh?.();
-  }
+   if (!node) return;
+
+   params.selectedNodeId = id;
+
+   selection.select(node);
+
+   controls.attach(node.root);
+
+   refresh();
+
+   onSelectionChange?.(node);
+
+   pane.refresh?.();
+ }
 
   function clearSelection() {
     controls.detach();
+
     selection.clear();
+
     params.selectedNodeId = "";
+
+    refresh();
+
     onSelectionChange?.(null);
+
     pane.refresh?.();
   }
 
@@ -226,10 +239,18 @@ ${node.name}.scale.set(${round(s.x)}, ${round(s.y)}, ${round(s.z)});
   }
 
   return {
-    controls,
-    refresh,
-    selectNode,
-    clearSelection,
-    deleteSelected,
-  };
+  controls,
+
+  refresh,
+
+  selectNode,
+
+  clearSelection,
+
+  deleteSelected,
+
+  getSelectedNode() {
+    return selection.getSelected();
+  },
+};
 }
