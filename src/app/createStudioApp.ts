@@ -127,6 +127,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   const activeAnimations: TimelineAnimation[] = [];
   let didDragTransform = false;
   let timelinePlaying = true;
+  let stopRecordingWhenTimelineEnds = false;
   let timelinePosition = 0;
   let cameraShotCursor = 0;
   let activeShotId: string | null = null;
@@ -923,10 +924,11 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     sceneBuilder.setStatus("Timeline paused");
   }
 
-  function stopTimeline() {
-    clearTimeline();
-    sceneBuilder.setStatus("Timeline stopped");
-  }
+    function stopTimeline() {
+      stopRecordingWhenTimelineEnds = false;
+      clearTimeline();
+      sceneBuilder.setStatus("Timeline stopped");
+    }
 
   function playTheatreSequence() {
     if (!theatreSheet) {
@@ -1364,6 +1366,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     bakeShotsToTheatre,
     startRecording,
     stopRecording,
+    recordTimeline,
     viewSelectedCamera,
     viewMainCamera,
     removeCameraShot,
@@ -1406,6 +1409,28 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   function stopRecording() {
     recordingManager.stop();
   }
+
+    function recordTimeline(
+      aspect: RecordingAspect,
+      seconds: number,
+      fps: number,
+    ) {
+      const timelineDuration = getTimelineDuration();
+      const safeDuration = Math.max(timelineDuration + 2, seconds, 1);
+
+      stopRecordingWhenTimelineEnds = true;
+
+      recordingManager.recordTimeline({
+        aspect,
+        seconds: safeDuration,
+        fps,
+        camera: getActiveRenderCamera(),
+        restorePixelRatio: renderer.getPixelRatio(),
+        onTimelineStart: () => {
+          playTimeline();
+        },
+      });
+    }
 
   timelineDock = createTimelineDock({
     root,
@@ -1510,25 +1535,36 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     renderer.setSize(width, height);
   }
 
-  function animate() {
-    requestAnimationFrame(animate);
+    function animate() {
+      requestAnimationFrame(animate);
 
-    const delta = clock.getDelta();
-    if (timelinePlaying) {
-      const timelineDuration = getTimelineDuration();
-      timelinePosition =
-        timelineDuration > 0
-          ? Math.min(timelinePosition + delta, timelineDuration)
-          : 0;
+      const delta = clock.getDelta();
 
-      updateTimelineAnimations({ activeAnimations, delta });
+      if (timelinePlaying) {
+        const timelineDuration = getTimelineDuration();
+
+        timelinePosition =
+          timelineDuration > 0
+            ? Math.min(timelinePosition + delta, timelineDuration)
+            : 0;
+
+        updateTimelineAnimations({ activeAnimations, delta });
+
+        if (
+          stopRecordingWhenTimelineEnds &&
+          timelineDuration > 0 &&
+          timelinePosition >= timelineDuration
+        ) {
+          stopRecordingWhenTimelineEnds = false;
+          recordingManager.stop();
+        }
+      }
+
+      timelineDock?.setPlayhead(timelinePosition, getTimelineDuration() || 10);
+      controls.update(delta);
+      helpers.forEach((helper) => helper.update());
+      renderer.render(scene, getActiveRenderCamera());
     }
-
-    timelineDock?.setPlayhead(timelinePosition, getTimelineDuration() || 10);
-    controls.update(delta);
-    helpers.forEach((helper) => helper.update());
-    renderer.render(scene, getActiveRenderCamera());
-  }
 
   resize();
   window.addEventListener("resize", resize);
