@@ -5,6 +5,7 @@ import type { ISheet, ISheetObject } from "@theatre/core";
 import type { IScrub } from "@theatre/studio";
 
 import { HierarchyPanel } from "../editor/HierarchyPanel";
+import { RecordingManager } from "./recording";
 import type { SceneNode } from "../core/scene/SceneNode";
 import { createSceneNodeFromObject } from "../core/scene/SceneNode";
 import { SceneRegistry } from "../core/scene/SceneRegistry";
@@ -54,12 +55,7 @@ import {
   studioInitialization,
   cleanupDuplicateTheatreShotPanes,
 } from "./studioTheatre";
-import {
-  type RecordingState,
-  getRecordingSize,
-  createRecordingDownload,
-  isRecordingSupported,
-} from "./studioRecording";
+
 import {
   pickNode as pickNodeFromScene,
   attachPickingEvents,
@@ -657,24 +653,24 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     sceneBuilder.setStatus("Shot duration updated");
   }
 
-function updateCameraShotRigOptions(
-  shotId: string,
-  options: CameraShotRigOptions,
-) {
-  const shot = getCameraShotAnimations().find(
-    (animation) => animation.id === shotId,
-  );
+  function updateCameraShotRigOptions(
+    shotId: string,
+    options: CameraShotRigOptions,
+  ) {
+    const shot = getCameraShotAnimations().find(
+      (animation) => animation.id === shotId,
+    );
 
-  if (!shot) return;
+    if (!shot) return;
 
-  shot.orbitDegrees = options.orbitDegrees;
-  shot.distanceMultiplier = options.distanceMultiplier;
-  shot.heightMultiplier = options.heightMultiplier;
-  shot.fov = options.fov;
+    shot.orbitDegrees = options.orbitDegrees;
+    shot.distanceMultiplier = options.distanceMultiplier;
+    shot.heightMultiplier = options.heightMultiplier;
+    shot.fov = options.fov;
 
-  refreshShotList();
-  sceneBuilder.setStatus("Shot parameters updated");
-}
+    refreshShotList();
+    sceneBuilder.setStatus("Shot parameters updated");
+  }
 
   function previewCameraShot(shotId: string) {
     const animation = getCameraShotAnimations().find(
@@ -1069,91 +1065,6 @@ function updateCameraShotRigOptions(
     }
   }
 
-  function restoreRecordingViewport() {
-    if (!recording) return;
-
-    window.clearTimeout(recording.stopTimer);
-    theatreSheet?.sequence.pause();
-    renderer.setPixelRatio(recording.restorePixelRatio);
-    recording.restoreCamera.aspect = recording.restoreCameraAspect;
-    recording.restoreCamera.updateProjectionMatrix();
-    recording = null;
-    resize();
-  }
-
-  function startRecording(
-    aspect: RecordingAspect,
-    seconds: number,
-    fps: number,
-  ) {
-    if (recording) {
-      productionPanel?.setStatus("Already recording");
-      return;
-    }
-
-    if (!isRecordingSupported(renderer.domElement)) {
-      productionPanel?.setStatus("Recording is not supported in this browser");
-      return;
-    }
-
-    const size = getRecordingSize(aspect);
-    const restorePixelRatio = renderer.getPixelRatio();
-    const recordCamera = getActiveRenderCamera();
-    const restoreCameraAspect = recordCamera.aspect;
-
-    rewindTimeline();
-    if (theatreSheet && hasTheatreAnimation()) {
-      timelinePlaying = false;
-      theatreSheet.sequence.position = 0;
-      void theatreSheet.sequence.play();
-    }
-    renderer.setPixelRatio(1);
-    renderer.setSize(size.width, size.height, false);
-    recordCamera.aspect = size.width / size.height;
-    recordCamera.updateProjectionMatrix();
-
-    const stream = renderer.domElement.captureStream(fps);
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-      ? "video/webm;codecs=vp9"
-      : "video/webm";
-    const recorder = new MediaRecorder(stream, { mimeType });
-    const chunks: Blob[] = [];
-
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) chunks.push(event.data);
-    };
-
-    recorder.onstop = () => {
-      createRecordingDownload({ chunks, mimeType, aspect });
-      stream.getTracks().forEach((track) => track.stop());
-      restoreRecordingViewport();
-      productionPanel?.setStatus("Recording saved");
-    };
-
-    recording = {
-      recorder,
-      chunks,
-      stopTimer: window.setTimeout(() => stopRecording(), seconds * 1000),
-      restorePixelRatio,
-      restoreCamera: recordCamera,
-      restoreCameraAspect,
-    };
-
-    recorder.start();
-    productionPanel?.setStatus(`Recording ${aspect} ${seconds}s`);
-  }
-
-  function stopRecording() {
-    if (!recording) {
-      productionPanel?.setStatus("Recorder ready");
-      return;
-    }
-
-    if (recording.recorder.state !== "inactive") {
-      recording.recorder.stop();
-    }
-  }
-
   function deleteNode(node: SceneNode) {
     const helper = helpers.get(node.id);
     unregisterTheatreObject(node);
@@ -1462,6 +1373,39 @@ function updateCameraShotRigOptions(
     updateCameraShotDuration,
     updateCameraShotRigOptions,
   });
+
+  const recordingManager = new RecordingManager(
+    renderer,
+    resize,
+    (message) => productionPanel?.setStatus(message),
+    () => {
+      rewindTimeline();
+
+      if (theatreSheet && hasTheatreAnimation()) {
+        timelinePlaying = false;
+        theatreSheet.sequence.position = 0;
+        void theatreSheet.sequence.play();
+      }
+    },
+  );
+
+  function startRecording(
+    aspect: RecordingAspect,
+    seconds: number,
+    fps: number,
+  ) {
+    recordingManager.start({
+      aspect,
+      seconds,
+      fps,
+      camera: getActiveRenderCamera(),
+      restorePixelRatio: renderer.getPixelRatio(),
+    });
+  }
+
+  function stopRecording() {
+    recordingManager.stop();
+  }
 
   timelineDock = createTimelineDock({
     root,
