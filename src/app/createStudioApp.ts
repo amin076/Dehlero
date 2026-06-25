@@ -22,6 +22,7 @@ import {
 import type {
   CameraOption,
   CameraShot,
+  CameraShotRigOptions,
   LibraryItem,
   MotionPreset,
   NodeSource,
@@ -32,7 +33,6 @@ import type {
   TheatreBinding,
   TimelineAnimation,
   TimelineDockItem,
-  CameraShotRigOptions,
 } from "./studioTypes";
 
 import { createLibrary } from "./studioLibrary";
@@ -657,23 +657,89 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     sceneBuilder.setStatus("Shot duration updated");
   }
 
-  function updateCameraShotRigOptions(
-    shotId: string,
-    options: CameraShotRigOptions,
-  ) {
-    const shot = getCameraShotAnimations().find(
-      (animation) => animation.id === shotId,
+function updateCameraShotRigOptions(
+  shotId: string,
+  options: CameraShotRigOptions,
+) {
+  const shot = getCameraShotAnimations().find(
+    (animation) => animation.id === shotId,
+  );
+
+  if (!shot) return;
+
+  shot.orbitDegrees = options.orbitDegrees;
+  shot.distanceMultiplier = options.distanceMultiplier;
+  shot.heightMultiplier = options.heightMultiplier;
+  shot.fov = options.fov;
+
+  refreshShotList();
+  sceneBuilder.setStatus("Shot parameters updated");
+}
+
+  function previewCameraShot(shotId: string) {
+    const animation = getCameraShotAnimations().find(
+      (shotAnimation) => shotAnimation.id === shotId,
     );
 
-    if (!shot) return;
+    const shot = animation?.metadata?.shot;
 
-    shot.orbitDegrees = options.orbitDegrees;
-    shot.distanceMultiplier = options.distanceMultiplier;
-    shot.heightMultiplier = options.heightMultiplier;
-    shot.fov = options.fov;
+    if (!animation || !shot) {
+      sceneBuilder.setStatus("Select a camera shot first");
+      return;
+    }
 
+    const shotCamera = getCameraByName(
+      animation.metadata?.cameraLabel ?? "Main View",
+    );
+
+    const selectedTarget =
+      animation.metadata?.targetLabel &&
+      animation.metadata.targetLabel !== "Scene center"
+        ? findSceneNodeByName(animation.metadata.targetLabel)
+        : selection.getSelected();
+
+    const runtime = createShotRuntimeState({
+      shotCamera,
+      selectedTarget,
+      fallbackTarget: getShotTarget(),
+    });
+
+    const previewProgress = shot === "static" ? 0 : shot === "orbit" ? 0.25 : 1;
+
+    const { nextPosition, nextFov } = calculateCameraShotState({
+      shot,
+      progress: previewProgress,
+      ...runtime,
+      options: {
+        orbitDegrees: animation.orbitDegrees,
+        distanceMultiplier: animation.distanceMultiplier,
+        heightMultiplier: animation.heightMultiplier,
+        fov: animation.fov,
+      },
+    });
+
+    timelinePlaying = false;
+    shotCamera.fov = nextFov;
+    shotCamera.updateProjectionMatrix();
+
+    if (shotCamera === camera) {
+      controls.setLookAt(
+        nextPosition.x,
+        nextPosition.y,
+        nextPosition.z,
+        runtime.center.x,
+        runtime.center.y,
+        runtime.center.z,
+        false,
+      );
+    } else {
+      shotCamera.position.copy(nextPosition);
+      shotCamera.lookAt(runtime.center);
+    }
+
+    activeShotId = animation.id;
     refreshShotList();
-    sceneBuilder.setStatus("Shot parameters updated");
+    sceneBuilder.setStatus(`Preview: ${animation.name}`);
   }
 
   function addShot(duration: number) {
@@ -1392,6 +1458,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     removeCameraShot,
     moveCameraShot,
     selectCameraShot,
+    previewCameraShot,
     updateCameraShotDuration,
     updateCameraShotRigOptions,
   });

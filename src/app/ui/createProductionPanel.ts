@@ -26,6 +26,7 @@ export function createProductionPanel({
   removeCameraShot,
   moveCameraShot,
   selectCameraShot,
+  previewCameraShot,
   updateCameraShotDuration,
   updateCameraShotRigOptions,
 }: {
@@ -55,6 +56,7 @@ export function createProductionPanel({
   removeCameraShot: (shotId: string) => void;
   moveCameraShot: (shotId: string, direction: -1 | 1) => void;
   selectCameraShot: (shotId: string) => void;
+  previewCameraShot: (shotId: string) => void;
   updateCameraShotDuration: (shotId: string, duration: number) => void;
   updateCameraShotRigOptions: (
     shotId: string,
@@ -132,7 +134,16 @@ export function createProductionPanel({
   <div class="production-section" data-tool-section="shots">
     <div class="production-section-heading">
       <div class="production-section-title">Shot Director</div>
-      <button id="add-shot" class="compact-button" type="button">Add Shot</button>
+
+      <div class="production-grid two">
+        <button id="preview-shot" class="compact-button" type="button">
+          Preview
+        </button>
+
+        <button id="add-shot" class="compact-button" type="button">
+          Add Shot
+        </button>
+      </div>
     </div>
 
     <div class="production-grid">
@@ -205,6 +216,7 @@ export function createProductionPanel({
   const renderCameraInput =
     panel.querySelector<HTMLSelectElement>("#render-camera")!;
   const shotList = panel.querySelector<HTMLDivElement>("#shot-list")!;
+  let selectedShotId: string | null = null;
   const status = panel.querySelector<HTMLDivElement>("#record-status")!;
   const orbitDegreesInput = panel.querySelector<HTMLInputElement>(
     "#shot-orbit-degrees",
@@ -223,6 +235,7 @@ export function createProductionPanel({
     heightMultiplier: Number(heightInput.value) || 0.45,
     fov: Math.max(Number(fovInput.value) || 34, 10),
   });
+
   const syncShotInputs = (shot?: ShotListItem) => {
     orbitDegreesInput.value = String(shot?.orbitDegrees ?? 360);
     distanceInput.value = String(shot?.distanceMultiplier ?? 3.2);
@@ -231,18 +244,20 @@ export function createProductionPanel({
   };
 
   const pushShotInputsToActiveShot = () => {
-    const activeShotId = shotList.querySelector<HTMLElement>(
-      ".shot-row.is-active",
-    )?.dataset.shotRow;
+    if (!selectedShotId) return;
 
-    if (!activeShotId) return;
-
-    updateCameraShotRigOptions(activeShotId, getShotRigOptions());
+    updateCameraShotRigOptions(selectedShotId, getShotRigOptions());
   };
 
-  [orbitDegreesInput, distanceInput, heightInput, fovInput].forEach((input) => {
+  [
+    orbitDegreesInput,
+    distanceInput,
+    heightInput,
+    fovInput,
+  ].forEach((input) => {
     input.onchange = pushShotInputsToActiveShot;
   });
+
   panel
     .querySelectorAll<HTMLButtonElement>("[data-motion]")
     .forEach((button) => {
@@ -281,6 +296,12 @@ export function createProductionPanel({
     addShot(getDuration());
   };
 
+  panel.querySelector<HTMLButtonElement>("#preview-shot")!.onclick = () => {
+    if (!selectedShotId) return;
+
+    previewCameraShot(selectedShotId);
+  };
+
   panel.querySelector<HTMLButtonElement>("#view-camera")!.onclick = () => {
     viewSelectedCamera(renderCameraInput.value);
   };
@@ -312,6 +333,7 @@ export function createProductionPanel({
       row?.dataset.shotRow &&
       !(event.target as HTMLElement).closest("button")
     ) {
+      selectedShotId = row.dataset.shotRow;
       selectCameraShot(row.dataset.shotRow);
       return;
     }
@@ -333,6 +355,10 @@ export function createProductionPanel({
     }
 
     if (button.dataset.shotAction === "delete") {
+      if (selectedShotId === button.dataset.shotId) {
+        selectedShotId = null;
+      }
+
       removeCameraShot(button.dataset.shotId);
     }
   };
@@ -375,9 +401,14 @@ export function createProductionPanel({
     },
 
     refreshShots(shots: ShotListItem[]) {
-      syncShotInputs(shots.find((shot) => shot.active));
+      const activeShot = shots.find((shot) => shot.active);
+      selectedShotId = activeShot?.id ?? selectedShotId;
+      syncShotInputs(activeShot);
+
       shotList.innerHTML = "";
+
       if (shots.length === 0) {
+        selectedShotId = null;
         const empty = document.createElement("div");
         empty.className = "shot-empty";
         empty.textContent = "No camera shots";
