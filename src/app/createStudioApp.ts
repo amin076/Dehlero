@@ -75,6 +75,7 @@ import {
   serializeTimeline as serializeTimelineData,
   clearTimelineState,
   applyCameraShotOrder as applyCameraShotOrderData,
+  duplicateCameraShot as duplicateCameraShotClip,
   resetTimelineAnimations,
   updateTimelineAnimations,
 } from "./studioTimeline";
@@ -635,7 +636,21 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     applyCameraShotOrder(shots);
     sceneBuilder.setStatus("Camera shot order updated");
   }
+    function duplicateCameraShot(shotId: string) {
+    const shots = getCameraShotAnimations();
 
+    const result = duplicateCameraShotClip({
+      shots,
+      shotId,
+    });
+
+    cameraShotCursor = result.cameraShotCursor;
+    timelinePosition = result.timelinePosition;
+    activeShotId = result.duplicatedShotId;
+
+    refreshShotList();
+    sceneBuilder.setStatus("Camera shot duplicated");
+  }
   function selectCameraShot(shotId: string) {
     if (!getCameraShotAnimations().some((shot) => shot.id === shotId)) return;
     activeShotId = shotId;
@@ -1372,6 +1387,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     removeCameraShot,
     moveCameraShot,
     selectCameraShot,
+    duplicateCameraShot,
     previewCameraShot,
     updateCameraShotDuration,
     updateCameraShotRigOptions,

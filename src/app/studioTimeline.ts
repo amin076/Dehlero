@@ -29,6 +29,51 @@ export function getCameraShotAnimations(
     .sort((first, second) => first.delay - second.delay);
 }
 
+export function duplicateCameraShot({
+  shots,
+  shotId,
+}: {
+  shots: TimelineAnimation[];
+  shotId: string;
+}) {
+  const sourceIndex = shots.findIndex((shot) => shot.id === shotId);
+
+  if (sourceIndex < 0) {
+    return {
+      duplicatedShotId: null as string | null,
+      cameraShotCursor: shots.reduce(
+        (cursor, shot) => Math.max(cursor, shot.delay + shot.duration),
+        0,
+      ),
+      timelinePosition: 0,
+    };
+  }
+
+  const source = shots[sourceIndex];
+
+  const duplicatedShot: TimelineAnimation = {
+    ...source,
+    id: crypto.randomUUID(),
+    name: `${source.name} Copy`,
+    elapsed: 0,
+    started: false,
+    finished: false,
+    metadata: {
+      ...source.metadata,
+    },
+  };
+
+  shots.splice(sourceIndex + 1, 0, duplicatedShot);
+
+  const order = applyCameraShotOrder(shots);
+
+  return {
+    duplicatedShotId: duplicatedShot.id,
+    cameraShotCursor: order.cameraShotCursor,
+    timelinePosition: order.timelinePosition,
+  };
+}
+
 export function getTimelineDuration({
   cameraShotCursor,
   activeAnimations,

@@ -27,6 +27,7 @@ export function createProductionPanel({
   removeCameraShot,
   moveCameraShot,
   selectCameraShot,
+  duplicateCameraShot,
   previewCameraShot,
   updateCameraShotDuration,
   updateCameraShotRigOptions,
@@ -44,6 +45,7 @@ export function createProductionPanel({
   stopTimeline: () => void;
   playTheatreSequence: () => void;
   restoreTheatreStudio: () => void;
+  duplicateCameraShot: (shotId: string) => void;
   restoreTheatreStudioWithShots: () => void;
   bakeShotsToTheatre: () => void;
   startRecording: (
@@ -372,6 +374,10 @@ export function createProductionPanel({
       moveCameraShot(button.dataset.shotId, 1);
       return;
     }
+    if (button.dataset.shotAction === "duplicate") {
+          duplicateCameraShot(button.dataset.shotId);
+          return;
+        }
 
     if (button.dataset.shotAction === "delete") {
       if (selectedShotId === button.dataset.shotId) {
@@ -464,6 +470,7 @@ export function createProductionPanel({
         [
           ["up", "Up"],
           ["down", "Down"],
+          ["duplicate", "Copy"],
           ["delete", "Del"],
         ].forEach(([action, label]) => {
           const button = document.createElement("button");
