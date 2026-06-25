@@ -23,3 +23,7 @@ export type RecordingStartOptions = {
   camera: THREE.PerspectiveCamera;
   restorePixelRatio: number;
 };
+
+export type RecordingTimelineOptions = RecordingStartOptions & {
+  onTimelineStart: () => void;
+};

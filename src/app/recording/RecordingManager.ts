@@ -4,6 +4,7 @@ import type {
   RecordingSize,
   RecordingStartOptions,
   RecordingState,
+  RecordingTimelineOptions,
 } from "./RecordingTypes";
 
 export class RecordingManager {
@@ -107,6 +108,14 @@ export class RecordingManager {
     this.setStatus(`Recording ${aspect} ${seconds}s`);
   }
 
+  recordTimeline(options: RecordingTimelineOptions) {
+    this.start(options);
+
+    if (!this.isRecording()) return;
+
+    options.onTimelineStart();
+  }
+
   stop() {
     if (!this.recording) {
       this.setStatus("Recorder ready");
@@ -134,11 +143,7 @@ export class RecordingManager {
     this.onAfterStop?.();
   }
 
-  private download(
-    chunks: Blob[],
-    mimeType: string,
-    aspect: RecordingAspect,
-  ) {
+  private download(chunks: Blob[], mimeType: string, aspect: RecordingAspect) {
     const blob = new Blob(chunks, { type: mimeType });
     const url = URL.createObjectURL(blob);
 

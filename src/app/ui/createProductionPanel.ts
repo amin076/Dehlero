@@ -20,6 +20,7 @@ export function createProductionPanel({
   restoreTheatreStudioWithShots,
   bakeShotsToTheatre,
   startRecording,
+  recordTimeline,
   stopRecording,
   viewSelectedCamera,
   viewMainCamera,
@@ -46,6 +47,11 @@ export function createProductionPanel({
   restoreTheatreStudioWithShots: () => void;
   bakeShotsToTheatre: () => void;
   startRecording: (
+    aspect: RecordingAspect,
+    seconds: number,
+    fps: number,
+  ) => void;
+  recordTimeline: (
     aspect: RecordingAspect,
     seconds: number,
     fps: number,
@@ -90,7 +96,7 @@ export function createProductionPanel({
   </div>
 
   <label data-tool-section="shots">
-    Duration
+    New Shot Duration
     <input id="motion-duration" type="number" min="0.5" step="0.5" value="4" />
   </label>
 
@@ -100,16 +106,16 @@ export function createProductionPanel({
     <div class="shot-rig-options">
       <label>
         Orbit Angle
-        <input id="shot-orbit-degrees" type="number" min="15" max="720" step="15" value="360" />
+        <input id="shot-orbit-degrees" type="number" min="1" max="720" step="1" value="360" />
       </label>
 
       <label>
         Distance
-        <input id="shot-distance" type="number" min="1" max="12" step="0.25" value="3.2" />
+        <input id="shot-distance" type="number" min="0.2" max="12" step="0.1" value="3.2" />
       </label>
 
       <label>
-        Height
+        Camera Height
         <input id="shot-height" type="number" min="-5" max="8" step="0.25" value="0.45" />
       </label>
 
@@ -199,14 +205,16 @@ export function createProductionPanel({
       </label>
     </div>
 
-    <div class="production-grid two">
-      <button id="record-start" type="button">Start</button>
+    <div class="production-grid">
+      <button id="record-start" type="button">Record</button>
+      <button id="record-timeline" type="button">Record Timeline</button>
       <button id="record-stop" type="button">Stop</button>
     </div>
 
     <div id="record-status" class="asset-status">Recorder ready</div>
   </div>
 `;
+
   const durationInput =
     panel.querySelector<HTMLInputElement>("#motion-duration")!;
   const aspectInput = panel.querySelector<HTMLSelectElement>("#record-aspect")!;
@@ -224,14 +232,20 @@ export function createProductionPanel({
   const distanceInput =
     panel.querySelector<HTMLInputElement>("#shot-distance")!;
   const heightInput = panel.querySelector<HTMLInputElement>("#shot-height")!;
-
   const fovInput = panel.querySelector<HTMLInputElement>("#shot-fov")!;
 
   const getDuration = () => Math.max(Number(durationInput.value) || 4, 0.5);
 
+  const getRecordingSeconds = () =>
+    Math.max(Number(secondsInput.value) || 8, 1);
+
+  const getRecordingFps = () => Math.max(Number(fpsInput.value) || 30, 12);
+
+  const getRecordingAspect = () => aspectInput.value as RecordingAspect;
+
   const getShotRigOptions = (): CameraShotRigOptions => ({
-    orbitDegrees: Math.max(Number(orbitDegreesInput.value) || 360, 15),
-    distanceMultiplier: Math.max(Number(distanceInput.value) || 3.2, 1),
+    orbitDegrees: Math.max(Number(orbitDegreesInput.value) || 360, 1),
+    distanceMultiplier: Math.max(Number(distanceInput.value) || 3.2, 0.2),
     heightMultiplier: Number(heightInput.value) || 0.45,
     fov: Math.max(Number(fovInput.value) || 34, 10),
   });
@@ -249,12 +263,7 @@ export function createProductionPanel({
     updateCameraShotRigOptions(selectedShotId, getShotRigOptions());
   };
 
-  [
-    orbitDegreesInput,
-    distanceInput,
-    heightInput,
-    fovInput,
-  ].forEach((input) => {
+  [orbitDegreesInput, distanceInput, heightInput, fovInput].forEach((input) => {
     input.onchange = pushShotInputsToActiveShot;
   });
 
@@ -318,9 +327,19 @@ export function createProductionPanel({
     viewSelectedCamera(renderCameraInput.value);
 
     startRecording(
-      aspectInput.value as RecordingAspect,
-      Math.max(Number(secondsInput.value) || 8, 1),
-      Math.max(Number(fpsInput.value) || 30, 12),
+      getRecordingAspect(),
+      getRecordingSeconds(),
+      getRecordingFps(),
+    );
+  };
+
+  panel.querySelector<HTMLButtonElement>("#record-timeline")!.onclick = () => {
+    viewSelectedCamera(renderCameraInput.value);
+
+    recordTimeline(
+      getRecordingAspect(),
+      getRecordingSeconds(),
+      getRecordingFps(),
     );
   };
 
@@ -435,7 +454,7 @@ export function createProductionPanel({
         duration.min = "0.5";
         duration.step = "0.5";
         duration.value = String(shot.duration);
-        duration.title = "Shot duration";
+        duration.title = "Clip Duration";
         duration.dataset.shotDuration = shot.id;
         duration.className = "shot-duration";
 
