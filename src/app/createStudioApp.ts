@@ -3,7 +3,7 @@ import CameraControls from "camera-controls";
 import { getProject, types } from "@theatre/core";
 import type { ISheet, ISheetObject } from "@theatre/core";
 import type { IScrub } from "@theatre/studio";
-
+import { exportProjectFile } from "../core/persistence/exportProjectFile";
 import { HierarchyPanel } from "../editor/HierarchyPanel";
 import { RecordingManager } from "./recording";
 import type { SceneNode } from "../core/scene/SceneNode";
@@ -1220,17 +1220,19 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   function saveScene() {
-    const expectedMainCameraKey = `${sceneBuilder.getSceneName()} / Main View Camera`;
-    if (theatreMainCamera?.address.objectKey !== expectedMainCameraKey) {
-      registerTheatreMainCamera();
-    }
-
     const savedScene = serializeScene();
     saveSceneToStorage(savedScene);
     sceneBuilder.refreshProjects(savedScene.name);
     sceneBuilder.setStatus(`Saved: ${savedScene.name}`);
   }
 
+function exportScene() {
+  const savedScene = serializeScene();
+  saveSceneToStorage(savedScene);
+  sceneBuilder.refreshProjects(savedScene.name);
+  exportProjectFile(savedScene.name, savedScene);
+  sceneBuilder.setStatus(`Exported: ${savedScene.name}`);
+}
   function saveCurrentSceneSilently() {
     const expectedMainCameraKey = `${sceneBuilder.getSceneName()} / Main View Camera`;
     if (theatreMainCamera?.address.objectKey !== expectedMainCameraKey) {
@@ -1407,6 +1409,7 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
     createPlanetFromTexture,
     saveScene,
     loadScene,
+    exportScene,
     switchScene,
     newScene,
   });

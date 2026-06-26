@@ -10,6 +10,7 @@ export function createSceneBuilderPanel({
   createPlanetFromTexture,
   saveScene,
   loadScene,
+  exportScene,
   switchScene,
   newScene,
 }: {
@@ -21,6 +22,7 @@ export function createSceneBuilderPanel({
   createPlanetFromTexture: (file: File) => void;
   saveScene: () => void;
   loadScene: () => void;
+  exportScene: () => void;
   switchScene: (name: string) => void;
   newScene: () => void;
 }) {
@@ -53,6 +55,7 @@ export function createSceneBuilderPanel({
       <div class="project-buttons">
         <button id="save-scene" type="button">Save Scene</button>
         <button id="load-scene" type="button">Open</button>
+        <button id="export-scene" type="button">Export</button>
         <button id="new-scene" type="button">New</button>
       </div>
     </div>
@@ -185,6 +188,8 @@ export function createSceneBuilderPanel({
 
   panel.querySelector<HTMLButtonElement>("#save-scene")!.onclick = saveScene;
   panel.querySelector<HTMLButtonElement>("#load-scene")!.onclick = loadScene;
+  panel.querySelector<HTMLButtonElement>("#export-scene")!.onclick =
+    exportScene;
   panel.querySelector<HTMLButtonElement>("#new-scene")!.onclick = newScene;
 
   projectSelect.onchange = () => {
