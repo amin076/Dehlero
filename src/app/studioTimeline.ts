@@ -154,12 +154,18 @@ export function serializeTimeline(
             animation.metadata.targetLabel !== "Scene center"
               ? { targetName: animation.metadata.targetLabel }
               : {}),
-            ...(animation.orbitDegrees
-              ? { orbitDegrees: animation.orbitDegrees }
-              : {}),
-            ...(animation.distanceMultiplier
-              ? { distanceMultiplier: animation.distanceMultiplier }
-              : {}),
+            ...(animation.orbitDegrees !== undefined
+  ? { orbitDegrees: animation.orbitDegrees }
+  : {}),
+...(animation.distanceMultiplier !== undefined
+  ? { distanceMultiplier: animation.distanceMultiplier }
+  : {}),
+...(animation.heightMultiplier !== undefined
+  ? { heightMultiplier: animation.heightMultiplier }
+  : {}),
+...(animation.fov !== undefined
+  ? { fov: animation.fov }
+  : {}),
           },
         ];
       }
