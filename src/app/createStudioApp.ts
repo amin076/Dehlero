@@ -3,7 +3,6 @@ import CameraControls from "camera-controls";
 import { getProject, types } from "@theatre/core";
 import type { ISheet, ISheetObject } from "@theatre/core";
 import type { IScrub } from "@theatre/studio";
-import { exportProjectFile } from "../core/persistence/exportProjectFile";
 import { HierarchyPanel } from "../editor/HierarchyPanel";
 import { RecordingManager } from "./recording";
 import type { SceneNode } from "../core/scene/SceneNode";
@@ -15,10 +14,7 @@ import { createStudioCamera } from "../engine/camera/createStudioCamera";
 import { createRenderer } from "../engine/renderer/createRenderer";
 import { createScene } from "../engine/scene/createScene";
 
-import {
-  CAMERA_SHOT_LABELS,
-  ACTIVE_PROJECT_STORAGE_KEY,
-} from "./studioConstants";
+import { CAMERA_SHOT_LABELS } from "./studioConstants";
 
 import type {
   CameraOption,
@@ -28,7 +24,6 @@ import type {
   MotionPreset,
   NodeSource,
   RecordingAspect,
-  SavedScene,
   SavedTimelineClip,
   SceneHelper,
   TheatreBinding,
@@ -49,7 +44,7 @@ import {
   numberProp,
   vectorProps,
 } from "./studioMath";
-import { loadProjectByName, migrateLegacySceneStorage } from "./studioStorage";
+import { migrateLegacySceneStorage } from "./studioStorage";
 import {
   studio,
   studioInitialization,
@@ -83,16 +78,11 @@ import {
   bakeObjectMotionToTheatre,
 } from "./studioTheatreBake";
 import {
-  serializeScene as serializeSceneData,
-  saveSceneToStorage,
-  saveCurrentSceneToStorage,
-  getNextUntitledSceneName,
-  getSavedProject,
-  applySavedObjectToScene,
   importModelObject,
   applyTextureToSelectedObject,
   createTexturedPlanetObject,
 } from "./studioScenePersistence";
+import { createProjectController } from "./studioProjectController";
 
 import { createWorkspaceBar } from "./ui/createWorkspaceBar";
 import { createSceneBuilderPanel } from "./ui/createSceneBuilderPanel";
@@ -1211,35 +1201,26 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
     clearTimeline();
   }
 
-  function serializeScene(): SavedScene {
-    return serializeSceneData({
-      sceneName: sceneBuilder.getSceneName(),
-      nodes: registry.getAll(),
-      serializeTimeline,
-    });
-  }
+  let projectController: ReturnType<typeof createProjectController>;
 
   function saveScene() {
-    const savedScene = serializeScene();
-    saveSceneToStorage(savedScene);
-    sceneBuilder.refreshProjects(savedScene.name);
-    sceneBuilder.setStatus(`Saved: ${savedScene.name}`);
+    projectController.saveScene();
   }
 
-function exportScene() {
-  const savedScene = serializeScene();
-  saveSceneToStorage(savedScene);
-  sceneBuilder.refreshProjects(savedScene.name);
-  exportProjectFile(savedScene.name, savedScene);
-  sceneBuilder.setStatus(`Exported: ${savedScene.name}`);
-}
-  function saveCurrentSceneSilently() {
-    const expectedMainCameraKey = `${sceneBuilder.getSceneName()} / Main View Camera`;
-    if (theatreMainCamera?.address.objectKey !== expectedMainCameraKey) {
-      registerTheatreMainCamera();
-    }
+  function exportScene() {
+    projectController.exportScene();
+  }
 
-    saveCurrentSceneToStorage(serializeScene());
+  function loadScene() {
+    projectController.loadScene();
+  }
+
+  function switchScene(projectName: string) {
+    projectController.switchScene(projectName);
+  }
+
+  function newScene() {
+    projectController.newScene();
   }
 
   function restoreTimeline(timeline: SavedTimelineClip[] | undefined) {
@@ -1276,74 +1257,6 @@ function exportScene() {
     rewindTimeline();
     timelinePlaying = false;
     refreshShotList();
-  }
-
-  async function loadSavedScene(savedScene: SavedScene) {
-    clearEditableScene();
-    sceneBuilder.setSceneName(savedScene.name);
-    registerTheatreMainCamera();
-
-    for (const savedObject of savedScene.objects) {
-      await applySavedObjectToScene({
-        savedObject,
-        library,
-        attachObject,
-      });
-    }
-
-    transformEditor.refresh();
-    hierarchyPanel.refresh();
-    transformEditor.clearSelection();
-    restoreTimeline(savedScene.timeline);
-    sceneBuilder.setStatus(`Loaded: ${savedScene.name}`);
-  }
-
-  function loadScene() {
-    const projectName = sceneBuilder.getSelectedProjectName();
-    const savedScene = projectName ? getSavedProject(projectName) : null;
-
-    if (!savedScene) {
-      sceneBuilder.setStatus("No saved scene");
-      return;
-    }
-
-    void loadSavedScene(savedScene).catch((error) => {
-      console.error(error);
-      sceneBuilder.setStatus("Load failed");
-    });
-  }
-
-  function switchScene(projectName: string) {
-    const currentName = sceneBuilder.getSceneName();
-    if (projectName === currentName) return;
-
-    saveCurrentSceneSilently();
-    const savedScene = getSavedProject(projectName);
-
-    if (!savedScene) {
-      sceneBuilder.setStatus("Selected scene was not found");
-      sceneBuilder.refreshProjects(currentName);
-      return;
-    }
-
-    localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, projectName);
-    void loadSavedScene(savedScene).catch((error) => {
-      console.error(error);
-      sceneBuilder.setStatus("Scene switch failed");
-      sceneBuilder.refreshProjects(currentName);
-    });
-  }
-
-  function newScene() {
-    saveCurrentSceneSilently();
-    clearEditableScene();
-    const nextName = getNextUntitledSceneName();
-    sceneBuilder.setSceneName(nextName);
-    registerTheatreMainCamera();
-    addDefaultProjectObjects();
-    transformEditor.clearSelection();
-    saveScene();
-    sceneBuilder.setStatus("New scene");
   }
 
   async function importModel(file: File) {
@@ -1412,6 +1325,20 @@ function exportScene() {
     exportScene,
     switchScene,
     newScene,
+  });
+
+  projectController = createProjectController({
+    sceneBuilder,
+    registry,
+    library,
+    attachObject,
+    clearEditableScene,
+    registerTheatreMainCamera,
+    serializeTimeline,
+    restoreTimeline,
+    addDefaultProjectObjects,
+    transformEditor,
+    hierarchyPanel,
   });
 
   productionPanel = createProductionPanel({
@@ -1565,28 +1492,15 @@ function exportScene() {
   }
 
   migrateLegacySceneStorage();
-  sceneBuilder.refreshProjects(
-    localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) ?? undefined,
-  );
+  projectController.refreshProjectsFromActiveProject();
 
   registerObject("Ambient Light", ambient, { type: "ambient" }, false);
 
-  const activeProjectName = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-  const activeScene = activeProjectName
-    ? loadProjectByName(activeProjectName)
-    : null;
-
-  if (activeScene) {
-    void loadSavedScene(activeScene).catch((error) => {
-      console.error(error);
-      sceneBuilder.setStatus("Auto-load failed");
-      addDefaultProjectObjects();
-    });
-  } else {
-    registerTheatreMainCamera();
+  void projectController.loadActiveProject().catch((error) => {
+    console.error(error);
+    sceneBuilder.setStatus("Auto-load failed");
     addDefaultProjectObjects();
-    transformEditor.clearSelection();
-  }
+  });
 
   function resize() {
     if (recording) return;
