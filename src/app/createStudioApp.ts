@@ -36,7 +36,7 @@ import type {
   TimelineDockItem,
 } from "./studioTypes";
 
-import { createLibrary } from "./studioLibrary";
+import { createLibraryWithRegistry } from "./studioLibrary";
 import {
   addObjectHelper,
   disposeObject,
@@ -75,7 +75,6 @@ import {
   serializeTimeline as serializeTimelineData,
   clearTimelineState,
   applyCameraShotOrder as applyCameraShotOrderData,
-  duplicateCameraShot as duplicateCameraShotClip,
   resetTimelineAnimations,
   updateTimelineAnimations,
 } from "./studioTimeline";
@@ -102,7 +101,7 @@ import { createTimelineDock } from "./ui/createTimelineDock";
 
 CameraControls.install({ THREE });
 
-export function createStudioApp({ root }: { root: HTMLDivElement }) {
+export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   root.innerHTML = "";
   root.className = "studio-shell";
   root.dataset.workspace = "scene";
@@ -116,7 +115,7 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   const renderer = createRenderer();
   const clock = new THREE.Clock();
   const helpers = new Map<string, SceneHelper>();
-  const library = createLibrary();
+  const library = await createLibraryWithRegistry();
   const theatreBindings = new Map<string, TheatreBinding>();
   let theatreSheet: ISheet | null = null;
   let theatreMainCamera: ISheetObject<any> | null = null;
@@ -152,8 +151,31 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
   controls.setLookAt(6, 5, 8, 0, 0.75, 0, false);
 
   const grid = new THREE.GridHelper(18, 18, "#3f4d64", "#202938");
-  scene.add(grid);
 
+  scene.add(grid);
+  const viewportHelpers = {
+    grid,
+  };
+
+  let restoreGridVisible = grid.visible;
+
+  function enterRecordViewportMode() {
+    restoreGridVisible = viewportHelpers.grid.visible;
+    viewportHelpers.grid.visible = false;
+  }
+
+  function exitRecordViewportMode() {
+    viewportHelpers.grid.visible = restoreGridVisible;
+  }
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key.toLowerCase() === "g") {
+      viewportHelpers.grid.visible = !viewportHelpers.grid.visible;
+      productionPanel?.setStatus(
+        viewportHelpers.grid.visible ? "Grid Visible" : "Grid Hidden",
+      );
+    }
+  });
   const ambient = new THREE.AmbientLight("#ffffff", 0.32);
   ambient.name = "Ambient Light";
   scene.add(ambient);
@@ -636,21 +658,43 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     applyCameraShotOrder(shots);
     sceneBuilder.setStatus("Camera shot order updated");
   }
-    function duplicateCameraShot(shotId: string) {
-    const shots = getCameraShotAnimations();
+  function duplicateCameraShot(shotId: string) {
+    const source = getCameraShotAnimations().find((shot) => shot.id === shotId);
 
-    const result = duplicateCameraShotClip({
-      shots,
-      shotId,
+    if (!source || source.kind !== "camera-shot" || !source.metadata?.shot) {
+      sceneBuilder.setStatus("Select a camera shot first");
+      return;
+    }
+
+    const shotType = source.metadata.shot as CameraShot;
+
+    applyCameraShot(shotType, source.duration, {
+      cameraName: source.metadata.cameraLabel ?? "Main View",
+      targetName:
+        source.metadata.targetLabel &&
+        source.metadata.targetLabel !== "Scene center"
+          ? source.metadata.targetLabel
+          : undefined,
+      orbitDegrees: source.orbitDegrees,
+      distanceMultiplier: source.distanceMultiplier,
+      heightMultiplier: source.heightMultiplier,
+      fov: source.fov,
+      silent: true,
     });
 
-    cameraShotCursor = result.cameraShotCursor;
-    timelinePosition = result.timelinePosition;
-    activeShotId = result.duplicatedShotId;
+    const shots = getCameraShotAnimations();
+    const duplicatedShot = shots[shots.length - 1];
 
+    if (duplicatedShot) {
+      duplicatedShot.name = `${source.name.replace(/ Copy( \d+)?$/, "")} Copy`;
+      activeShotId = duplicatedShot.id;
+    }
+
+    rebuildCameraShotTiming();
     refreshShotList();
     sceneBuilder.setStatus("Camera shot duplicated");
   }
+
   function selectCameraShot(shotId: string) {
     if (!getCameraShotAnimations().some((shot) => shot.id === shotId)) return;
     activeShotId = shotId;
@@ -939,11 +983,11 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     sceneBuilder.setStatus("Timeline paused");
   }
 
-    function stopTimeline() {
-      stopRecordingWhenTimelineEnds = false;
-      clearTimeline();
-      sceneBuilder.setStatus("Timeline stopped");
-    }
+  function stopTimeline() {
+    stopRecordingWhenTimelineEnds = false;
+    clearTimeline();
+    sceneBuilder.setStatus("Timeline stopped");
+  }
 
   function playTheatreSequence() {
     if (!theatreSheet) {
@@ -1398,6 +1442,8 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     resize,
     (message) => productionPanel?.setStatus(message),
     () => {
+      enterRecordViewportMode();
+
       rewindTimeline();
 
       if (theatreSheet && hasTheatreAnimation()) {
@@ -1405,6 +1451,9 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
         theatreSheet.sequence.position = 0;
         void theatreSheet.sequence.play();
       }
+    },
+    () => {
+      exitRecordViewportMode();
     },
   );
 
@@ -1426,27 +1475,27 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     recordingManager.stop();
   }
 
-    function recordTimeline(
-      aspect: RecordingAspect,
-      seconds: number,
-      fps: number,
-    ) {
-      const timelineDuration = getTimelineDuration();
-      const safeDuration = Math.max(timelineDuration + 2, seconds, 1);
+  function recordTimeline(
+    aspect: RecordingAspect,
+    seconds: number,
+    fps: number,
+  ) {
+    const timelineDuration = getTimelineDuration();
+    const safeDuration = Math.max(timelineDuration + 2, seconds, 1);
 
-      stopRecordingWhenTimelineEnds = true;
+    stopRecordingWhenTimelineEnds = true;
 
-      recordingManager.recordTimeline({
-        aspect,
-        seconds: safeDuration,
-        fps,
-        camera: getActiveRenderCamera(),
-        restorePixelRatio: renderer.getPixelRatio(),
-        onTimelineStart: () => {
-          playTimeline();
-        },
-      });
-    }
+    recordingManager.recordTimeline({
+      aspect,
+      seconds: safeDuration,
+      fps,
+      camera: getActiveRenderCamera(),
+      restorePixelRatio: renderer.getPixelRatio(),
+      onTimelineStart: () => {
+        playTimeline();
+      },
+    });
+  }
 
   timelineDock = createTimelineDock({
     root,
@@ -1551,36 +1600,36 @@ export function createStudioApp({ root }: { root: HTMLDivElement }) {
     renderer.setSize(width, height);
   }
 
-    function animate() {
-      requestAnimationFrame(animate);
+  function animate() {
+    requestAnimationFrame(animate);
 
-      const delta = clock.getDelta();
+    const delta = clock.getDelta();
 
-      if (timelinePlaying) {
-        const timelineDuration = getTimelineDuration();
+    if (timelinePlaying) {
+      const timelineDuration = getTimelineDuration();
 
-        timelinePosition =
-          timelineDuration > 0
-            ? Math.min(timelinePosition + delta, timelineDuration)
-            : 0;
+      timelinePosition =
+        timelineDuration > 0
+          ? Math.min(timelinePosition + delta, timelineDuration)
+          : 0;
 
-        updateTimelineAnimations({ activeAnimations, delta });
+      updateTimelineAnimations({ activeAnimations, delta });
 
-        if (
-          stopRecordingWhenTimelineEnds &&
-          timelineDuration > 0 &&
-          timelinePosition >= timelineDuration
-        ) {
-          stopRecordingWhenTimelineEnds = false;
-          recordingManager.stop();
-        }
+      if (
+        stopRecordingWhenTimelineEnds &&
+        timelineDuration > 0 &&
+        timelinePosition >= timelineDuration
+      ) {
+        stopRecordingWhenTimelineEnds = false;
+        recordingManager.stop();
       }
-
-      timelineDock?.setPlayhead(timelinePosition, getTimelineDuration() || 10);
-      controls.update(delta);
-      helpers.forEach((helper) => helper.update());
-      renderer.render(scene, getActiveRenderCamera());
     }
+
+    timelineDock?.setPlayhead(timelinePosition, getTimelineDuration() || 10);
+    controls.update(delta);
+    helpers.forEach((helper) => helper.update());
+    renderer.render(scene, getActiveRenderCamera());
+  }
 
   resize();
   window.addEventListener("resize", resize);

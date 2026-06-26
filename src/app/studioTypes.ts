@@ -1,7 +1,13 @@
 import * as THREE from "three";
 import type { ISheetObject } from "@theatre/core";
 
-export type LibraryCategory = "3D" | "2D" | "Lights" | "Camera" | "Planets";
+export type LibraryCategory =
+  | "3D"
+  | "2D"
+  | "Planets"
+  | "Environment"
+  | "Lights"
+  | "Camera";
 
 export type LibraryItem = {
   id: string;

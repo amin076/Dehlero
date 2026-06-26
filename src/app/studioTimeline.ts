@@ -39,13 +39,13 @@ export function duplicateCameraShot({
   const sourceIndex = shots.findIndex((shot) => shot.id === shotId);
 
   if (sourceIndex < 0) {
+    const order = applyCameraShotOrder(shots);
+
     return {
+      duplicatedShot: null as TimelineAnimation | null,
       duplicatedShotId: null as string | null,
-      cameraShotCursor: shots.reduce(
-        (cursor, shot) => Math.max(cursor, shot.delay + shot.duration),
-        0,
-      ),
-      timelinePosition: 0,
+      cameraShotCursor: order.cameraShotCursor,
+      timelinePosition: order.timelinePosition,
     };
   }
 
@@ -54,7 +54,8 @@ export function duplicateCameraShot({
   const duplicatedShot: TimelineAnimation = {
     ...source,
     id: crypto.randomUUID(),
-    name: `${source.name} Copy`,
+    name: `${source.name.replace(/ Copy( \d+)?$/, "")} Copy`,
+    delay: source.delay + source.duration,
     elapsed: 0,
     started: false,
     finished: false,
@@ -68,6 +69,7 @@ export function duplicateCameraShot({
   const order = applyCameraShotOrder(shots);
 
   return {
+    duplicatedShot,
     duplicatedShotId: duplicatedShot.id,
     cameraShotCursor: order.cameraShotCursor,
     timelinePosition: order.timelinePosition,

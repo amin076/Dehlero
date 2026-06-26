@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "generatedAt": "2026-06-25T10:30:00.000Z",
+  "assets": [
+    {
+      "id": "saturn",
+      "name": "Saturn",
+      "type": "procedural-planet",
+      "category": "astronomy/planets",
+      "manifest": "/assets/astronomy/planets/saturn/asset.json"
+    },
+    {
+      "id": "titan",
+      "name": "Titan",
+      "type": "procedural-planet",
+      "category": "astronomy/moons",
+      "manifest": "/assets/astronomy/moons/titan/asset.json"
+    }
+  ]
+}

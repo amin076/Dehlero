@@ -64,24 +64,29 @@ export function applyTextureToObject(
   object: THREE.Object3D,
   texture: THREE.Texture,
 ) {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 16;
+
   object.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return;
 
-    const materials = Array.isArray(child.material)
-      ? child.material
-      : [child.material];
-
-    child.material = materials.map((material) => {
-      const nextMaterial =
-        material instanceof THREE.MeshStandardMaterial
-          ? material.clone()
-          : new THREE.MeshStandardMaterial();
-
-      nextMaterial.map = texture;
-      nextMaterial.color.set("#ffffff");
-      nextMaterial.needsUpdate = true;
-
-      return nextMaterial;
+    const material = new THREE.MeshStandardMaterial({
+      map: texture,
+      color: 0xffffff,
+      roughness: 0.95,
+      metalness: 0,
+      transparent: false,
+      opacity: 1,
+      alphaMap: null,
+      alphaTest: 0,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.DoubleSide,
     });
+
+    material.needsUpdate = true;
+    child.material = material;
   });
 }

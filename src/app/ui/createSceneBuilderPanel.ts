@@ -31,6 +31,7 @@ export function createSceneBuilderPanel({
     "3D",
     "2D",
     "Planets",
+    "Environment",
     "Lights",
     "Camera",
   ];
@@ -66,12 +67,9 @@ export function createSceneBuilderPanel({
     </div>
   `;
 
-  const groups = panel.querySelector<HTMLDivElement>(
-    ".asset-library-groups",
-  )!;
+  const groups = panel.querySelector<HTMLDivElement>(".asset-library-groups")!;
   const status = panel.querySelector<HTMLDivElement>("#asset-status")!;
-  const sceneNameInput =
-    panel.querySelector<HTMLInputElement>("#scene-name")!;
+  const sceneNameInput = panel.querySelector<HTMLInputElement>("#scene-name")!;
   const projectSelect =
     panel.querySelector<HTMLSelectElement>("#project-select")!;
 
@@ -100,6 +98,10 @@ export function createSceneBuilderPanel({
   }
 
   categories.forEach((category) => {
+    const categoryItems = library.filter((item) => item.category === category);
+
+    if (categoryItems.length === 0) return;
+
     const section = document.createElement("section");
     section.className = "asset-library-group";
 
@@ -110,22 +112,20 @@ export function createSceneBuilderPanel({
     const buttons = document.createElement("div");
     buttons.className = "asset-library-buttons";
 
-    library
-      .filter((item) => item.category === category)
-      .forEach((item) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `asset-button asset-button-${item.id}`;
-        button.title = item.label;
-        button.setAttribute("aria-label", item.label);
-        button.innerHTML = `
-          <span class="asset-button-icon" aria-hidden="true"></span>
-          <span class="asset-button-label">${item.label}</span>
-        `;
+    categoryItems.forEach((item) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `asset-button asset-button-${item.id}`;
+      button.title = item.label;
+      button.setAttribute("aria-label", item.label);
+      button.innerHTML = `
+        <span class="asset-button-icon" aria-hidden="true"></span>
+        <span class="asset-button-label">${item.label}</span>
+      `;
 
-        button.onclick = () => addLibraryObject(item);
-        buttons.appendChild(button);
-      });
+      button.onclick = () => addLibraryObject(item);
+      buttons.appendChild(button);
+    });
 
     section.appendChild(buttons);
     groups.appendChild(section);

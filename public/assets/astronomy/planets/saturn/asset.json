@@ -1,0 +1,36 @@
+﻿{
+  "id": "saturn",
+  "name": "Saturn",
+  "type": "procedural-planet",
+  "category": "astronomy/planets",
+  "description": "Procedural Saturn planet using texture map and Dehlero Saturn rings.",
+  "model": null,
+  "textures": {
+    "albedo": "textures/saturn_albedo.jpg",
+    "normal": null,
+    "roughness": null,
+    "height": null
+  },
+  "components": {
+    "sphere": true,
+    "rings": true
+  },
+  "defaultTransform": {
+    "position": [0, 1.4, 0],
+    "rotation": [0, 0, 0],
+    "scale": [1.8, 1.8, 1.8]
+  },
+  "visual": {
+    "radius": 1,
+    "segments": 96,
+    "ringInnerRadius": 1.35,
+    "ringOuterRadius": 2.35,
+    "tiltDegrees": 26.7
+  },
+  "metadata": {
+    "planet": "Saturn",
+    "family": "saturn-system",
+    "hasRings": true,
+    "suitableFor": ["cinematic", "education", "titan-world-cup-2226"]
+  }
+}

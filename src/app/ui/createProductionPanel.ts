@@ -470,7 +470,7 @@ export function createProductionPanel({
         [
           ["up", "Up"],
           ["down", "Down"],
-          ["duplicate", "Copy"],
+          ["duplicate", "⧉"],
           ["delete", "Del"],
         ].forEach(([action, label]) => {
           const button = document.createElement("button");

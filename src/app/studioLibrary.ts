@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import type { LibraryItem } from "./studioTypes";
 import { createSaturnRings } from "../assets/astronomy/createSaturnRings";
+import { createTitanSurface } from "../assets/astronomy/createTitanSurface";
+import { createRegistryLibraryItems } from "./library/createRegistryLibraryItems";
 
 export function createDefaultMaterial(color: THREE.ColorRepresentation) {
   return new THREE.MeshStandardMaterial({
@@ -115,6 +117,13 @@ export function createLibrary(): LibraryItem[] {
         return plane;
       },
     },
+
+    {
+      id: "ground-surface",
+      label: "Ground Surface",
+      category: "Environment",
+      create: () => createTitanSurface(),
+    },
     {
       id: "circle",
       label: "Circle",
@@ -145,6 +154,7 @@ export function createLibrary(): LibraryItem[] {
       category: "Planets",
       create: () => createPlanet(),
     },
+
     {
       id: "saturn-rings",
       label: "Saturn Rings",
@@ -188,4 +198,19 @@ export function createLibrary(): LibraryItem[] {
       },
     },
   ];
+}
+
+export async function createLibraryWithRegistry(): Promise<LibraryItem[]> {
+  const baseLibrary = createLibrary();
+
+  try {
+    const registryItems = await createRegistryLibraryItems();
+    const existingIds = new Set(baseLibrary.map((item) => item.id));
+    const newItems = registryItems.filter((item) => !existingIds.has(item.id));
+
+    return [...baseLibrary, ...newItems];
+  } catch (error) {
+    console.warn("Failed to load asset registry", error);
+    return baseLibrary;
+  }
 }
