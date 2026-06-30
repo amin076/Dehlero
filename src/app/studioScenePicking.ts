@@ -1,4 +1,5 @@
 import * as THREE from "three";
+
 import type { SceneNode } from "../core/scene/SceneNode";
 import type { NodeSource } from "./studioTypes";
 
@@ -6,17 +7,19 @@ export function findNodeFromObject(
   object: THREE.Object3D,
   nodes: SceneNode[],
 ) {
-  return nodes
-    .filter(
-      (node) =>
-        (node.metadata.source as NodeSource)?.type !== "ambient",
-    )
-    .find(
-      (node) =>
-        node.root === object ||
-        node.root.children.includes(object) ||
-        node.root.getObjectById(object.id),
-    );
+  let current: THREE.Object3D | null = object;
+
+  while (current) {
+    const match = nodes.find((node) => node.root === current);
+
+    if (match) {
+      return match;
+    }
+
+    current = current.parent;
+  }
+
+  return null;
 }
 
 export function pickNode({
@@ -34,34 +37,37 @@ export function pickNode({
   pointer: THREE.Vector2;
   nodes: SceneNode[];
 }) {
-  const rect = renderer.domElement.getBoundingClientRect();
-
-  pointer.x =
-    ((event.clientX - rect.left) / rect.width) * 2 - 1;
-
-  pointer.y =
-    -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
   const selectableNodes = nodes.filter(
     (node) =>
+      !node.locked &&
+      node.visible !== false &&
       (node.metadata.source as NodeSource)?.type !== "ambient",
   );
 
+  const rect = renderer.domElement.getBoundingClientRect();
+
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
   raycaster.setFromCamera(pointer, camera);
 
-  const intersects = raycaster.intersectObjects(
-    selectableNodes.map((node) => node.root),
-    true,
-  );
+  const roots = selectableNodes.map((node) => node.root);
+
+  const intersects = raycaster.intersectObjects(roots, true);
 
   if (intersects.length === 0) {
     return null;
   }
 
-  return findNodeFromObject(
-    intersects[0].object,
-    selectableNodes,
-  );
+  for (const hit of intersects) {
+    const node = findNodeFromObject(hit.object, selectableNodes);
+
+    if (node) {
+      return node;
+    }
+  }
+
+  return null;
 }
 
 export function attachPickingEvents({
@@ -71,7 +77,6 @@ export function attachPickingEvents({
   setDidDragTransform,
   selectNode,
   clearSelection,
-  deleteNode,
   pickNode,
 }: {
   renderer: THREE.WebGLRenderer;
@@ -80,56 +85,36 @@ export function attachPickingEvents({
   setDidDragTransform: (value: boolean) => void;
   selectNode: (nodeId: string) => void;
   clearSelection: () => void;
-  deleteNode: (nodeId: string) => void;
   pickNode: (event: PointerEvent) => SceneNode | null;
 }) {
-  renderer.domElement.addEventListener(
-    "pointerdown",
-    (event) => {
-      pointerDown.set(event.clientX, event.clientY);
-      setDidDragTransform(false);
-    },
-  );
+  renderer.domElement.addEventListener("pointerdown", (event) => {
+    pointerDown.set(event.clientX, event.clientY);
+    setDidDragTransform(false);
+  });
 
-  renderer.domElement.addEventListener(
-    "pointerup",
-    (event) => {
-      if (event.button !== 0) return;
-      if (didDragTransform) return;
+  renderer.domElement.addEventListener("pointerup", (event) => {
+    if (event.button !== 0) return;
+    if (didDragTransform) return;
 
-      if (
-        pointerDown.distanceTo(
-          new THREE.Vector2(
-            event.clientX,
-            event.clientY,
-          ),
-        ) > 4
-      ) {
-        return;
-      }
+    const moved =
+      pointerDown.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) >
+      4;
 
-      const node = pickNode(event);
+    if (moved) {
+      return;
+    }
 
-      if (node) {
-        selectNode(node.id);
-        return;
-      }
+    const node = pickNode(event);
 
-      clearSelection();
-    },
-  );
-
-  renderer.domElement.addEventListener(
-    "contextmenu",
-    (event) => {
-      event.preventDefault();
-
-      const node = pickNode(event);
-
-      if (!node) return;
-
+    if (node) {
       selectNode(node.id);
-      deleteNode(node.id);
-    },
-  );
+      return;
+    }
+
+    clearSelection();
+  });
+
+  renderer.domElement.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+  });
 }

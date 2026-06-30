@@ -1,0 +1,18 @@
+{
+  "id": "astronaut",
+  "name": "Astronaut",
+  "type": "glb-model",
+  "category": "characters",
+  "description": "Default Dehlero astronaut model with editable football team colors.",
+  "model": "astronaut.glb",
+  "defaultTransform": {
+    "position": [0, 0, 0],
+    "rotation": [0, 0, 0],
+    "scale": [1, 1, 1]
+  },
+  "metadata": {
+    "character": "astronaut",
+    "use": ["sports", "science", "titan-world-cup"],
+    "colorEditable": true
+  }
+}

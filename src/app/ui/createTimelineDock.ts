@@ -6,13 +6,12 @@ export function createTimelineDock({
   playTimeline,
   pauseTimeline,
   stopTimeline,
-  restoreTheatreStudio,
 }: {
   root: HTMLElement;
   playTimeline: () => void;
   pauseTimeline: () => void;
   stopTimeline: () => void;
-  restoreTheatreStudio: () => void;
+  restoreTheatreStudio?: () => void;
 }) {
   const dock = document.createElement("aside");
   dock.className = "timeline-dock";
@@ -30,7 +29,6 @@ export function createTimelineDock({
         <button id="dock-play" type="button">Play</button>
         <button id="dock-pause" type="button">Pause</button>
         <button id="dock-stop" type="button">Stop</button>
-        <button id="dock-studio" type="button">Theatre Editor</button>
       </div>
     </div>
 
@@ -68,8 +66,6 @@ export function createTimelineDock({
   dock.querySelector<HTMLButtonElement>("#dock-play")!.onclick = playTimeline;
   dock.querySelector<HTMLButtonElement>("#dock-pause")!.onclick = pauseTimeline;
   dock.querySelector<HTMLButtonElement>("#dock-stop")!.onclick = stopTimeline;
-  dock.querySelector<HTMLButtonElement>("#dock-studio")!.onclick =
-    restoreTheatreStudio;
 
   function renderRuler(totalDuration: number) {
     ruler.innerHTML = "";

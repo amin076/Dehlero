@@ -8,7 +8,7 @@ function mapAssetCategory(category: string): LibraryCategory {
   }
 
   if (category.includes("planets") || category.includes("moons")) {
-    return "Planets";
+    return "Astronomy";
   }
 
   if (category.includes("lights")) {

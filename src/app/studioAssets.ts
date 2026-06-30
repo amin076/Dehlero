@@ -19,6 +19,7 @@ export async function loadModelFile(file: File) {
   try {
     if (extension === "glb" || extension === "gltf") {
       const gltf = await gltfLoader.loadAsync(url);
+      makeLoadedModelOpaque(gltf.scene);
       return gltf.scene;
     }
 
@@ -88,5 +89,33 @@ export function applyTextureToObject(
 
     material.needsUpdate = true;
     child.material = material;
+  });
+}
+function makeLoadedModelOpaque(root: THREE.Object3D) {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.material) return;
+
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : [child.material];
+
+    materials.forEach((material) => {
+      const standard = material as THREE.MeshStandardMaterial;
+      material.transparent = false;
+      material.opacity = 1;
+      material.alphaTest = 0;
+      material.depthWrite = true;
+      material.depthTest = true;
+
+      if (standard.alphaMap) {
+        standard.alphaMap = null;
+      }
+
+      material.needsUpdate = true;
+    });
+
+    child.castShadow = true;
+    child.receiveShadow = true;
+    child.renderOrder = 0;
   });
 }

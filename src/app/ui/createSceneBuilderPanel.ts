@@ -11,6 +11,7 @@ export function createSceneBuilderPanel({
   saveScene,
   loadScene,
   exportScene,
+  importScene,
   switchScene,
   newScene,
 }: {
@@ -23,6 +24,7 @@ export function createSceneBuilderPanel({
   saveScene: () => void;
   loadScene: () => void;
   exportScene: () => void;
+  importScene: (file: File) => void;
   switchScene: (name: string) => void;
   newScene: () => void;
 }) {
@@ -32,8 +34,12 @@ export function createSceneBuilderPanel({
   const categories: LibraryCategory[] = [
     "3D",
     "2D",
-    "Planets",
+    "Science",
+    "Astronomy",
     "Environment",
+    "Architecture",
+    "Vehicles",
+    "Sports",
     "Lights",
     "Camera",
   ];
@@ -56,6 +62,7 @@ export function createSceneBuilderPanel({
         <button id="save-scene" type="button">Save Scene</button>
         <button id="load-scene" type="button">Open</button>
         <button id="export-scene" type="button">Export</button>
+        <button id="import-scene" type="button">Import</button>
         <button id="new-scene" type="button">New</button>
       </div>
     </div>
@@ -149,6 +156,11 @@ export function createSceneBuilderPanel({
   planetTextureInput.accept = "image/*";
   planetTextureInput.hidden = true;
 
+  const sceneImportInput = document.createElement("input");
+  sceneImportInput.type = "file";
+  sceneImportInput.accept = ".json,.dhlscene,.dehlero,application/json";
+  sceneImportInput.hidden = true;
+
   modelInput.onchange = () => {
     const file = modelInput.files?.[0];
     if (!file) return;
@@ -174,6 +186,15 @@ export function createSceneBuilderPanel({
     planetTextureInput.value = "";
   };
 
+  sceneImportInput.onchange = () => {
+    const file = sceneImportInput.files?.[0];
+    if (!file) return;
+
+    status.textContent = `Importing scene ${file.name}`;
+    importScene(file);
+    sceneImportInput.value = "";
+  };
+
   panel.querySelector<HTMLButtonElement>("#import-model")!.onclick = () => {
     modelInput.click();
   };
@@ -190,6 +211,9 @@ export function createSceneBuilderPanel({
   panel.querySelector<HTMLButtonElement>("#load-scene")!.onclick = loadScene;
   panel.querySelector<HTMLButtonElement>("#export-scene")!.onclick =
     exportScene;
+  panel.querySelector<HTMLButtonElement>("#import-scene")!.onclick = () => {
+    sceneImportInput.click();
+  };
   panel.querySelector<HTMLButtonElement>("#new-scene")!.onclick = newScene;
 
   projectSelect.onchange = () => {
@@ -198,7 +222,7 @@ export function createSceneBuilderPanel({
     }
   };
 
-  panel.append(modelInput, textureInput, planetTextureInput);
+  panel.append(modelInput, textureInput, planetTextureInput, sceneImportInput);
   root.appendChild(panel);
 
   return {

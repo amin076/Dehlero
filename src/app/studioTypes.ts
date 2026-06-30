@@ -4,15 +4,32 @@ import type { ISheetObject } from "@theatre/core";
 export type LibraryCategory =
   | "3D"
   | "2D"
+  | "Science"
+  | "Astronomy"
   | "Planets"
   | "Environment"
+  | "Architecture"
+  | "Vehicles"
+  | "Sports"
   | "Lights"
   | "Camera";
+
+export type LibraryParamSpec = {
+  key: string;
+  label: string;
+  value: number | string | boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  type?: "number" | "color" | "boolean" | "text";
+};
 
 export type LibraryItem = {
   id: string;
   label: string;
   category: LibraryCategory;
+  description?: string;
+  parameters?: LibraryParamSpec[];
   create: () => THREE.Object3D;
 };
 
@@ -49,7 +66,23 @@ export type SavedScene = {
   timeline?: SavedTimelineClip[];
 };
 
-export type MotionPreset = "spin" | "pulse" | "float" | "color-shift";
+export type MotionPreset =
+  | "spin"
+  | "pulse"
+  | "float"
+  | "color-shift"
+  | "orbit-circular"
+  | "orbit-elliptical"
+  | "linear"
+  | "accelerate"
+  | "projectile"
+  | "fall"
+  | "vibration"
+  | "pendulum"
+  | "wave"
+  | "spring"
+  | "figure-eight"
+  | "camera-orbit";
 
 export type CameraShot =
   | "static"
@@ -63,7 +96,8 @@ export type CameraShot =
   | "crane-up"
   | "crane-down"
   | "hero";
-export type RecordingAspect = "16:9" | "9:16";
+
+export type RecordingAspect = "16:9" | "9:16" | "1:1" | "4:5";
 
 export type WorkspaceMode = "scene" | "shots" | "animate" | "record";
 

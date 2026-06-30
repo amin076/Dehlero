@@ -79,6 +79,23 @@ export function saveCurrentSceneToStorage(savedScene: SavedScene) {
   addProjectName(savedScene.name);
 }
 
+function createMissingAssetPlaceholder(name: string) {
+  const group = new THREE.Group();
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const material = new THREE.MeshStandardMaterial({
+    color: "#ff4d4d",
+    roughness: 0.7,
+    metalness: 0.05,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+
+  mesh.name = `${name} Missing Asset Placeholder`;
+  group.name = name;
+  group.add(mesh);
+
+  return group;
+}
+
 export async function createObjectFromSaved({
   savedObject,
   library,
@@ -94,25 +111,35 @@ export async function createObjectFromSaved({
     );
 
     if (!item) {
-      throw new Error(`Missing library item: ${savedObject.name}`);
+      return createMissingAssetPlaceholder(savedObject.name);
     }
 
     return item.create();
   }
 
   if (source.type === "model") {
-    const blob = await loadAssetBlob(source.assetKey);
-    const file = new File([blob], source.fileName);
+    try {
+      const blob = await loadAssetBlob(source.assetKey);
+      const file = new File([blob], source.fileName);
 
-    return normalizeImportedObject(await loadModelFile(file));
+      return normalizeImportedObject(await loadModelFile(file));
+    } catch (error) {
+      console.warn(`Missing model asset for ${savedObject.name}`, error);
+      return createMissingAssetPlaceholder(savedObject.name);
+    }
   }
 
   if (source.type === "textured-planet") {
-    const blob = await loadAssetBlob(source.assetKey);
-    return createPlanet(loadTextureFromBlob(blob));
+    try {
+      const blob = await loadAssetBlob(source.assetKey);
+      return createPlanet(loadTextureFromBlob(blob));
+    } catch (error) {
+      console.warn(`Missing texture asset for ${savedObject.name}`, error);
+      return createMissingAssetPlaceholder(savedObject.name);
+    }
   }
 
-  throw new Error(`Unsupported saved object: ${savedObject.name}`);
+  return createMissingAssetPlaceholder(savedObject.name);
 }
 
 export async function importModelObject({
@@ -243,8 +270,12 @@ export async function applySavedObjectToScene({
   applySavedTransform(object, savedObject.transform);
 
   if (savedObject.texture) {
-    const blob = await loadAssetBlob(savedObject.texture.assetKey);
-    applyTextureToObject(object, loadTextureFromBlob(blob));
+    try {
+      const blob = await loadAssetBlob(savedObject.texture.assetKey);
+      applyTextureToObject(object, loadTextureFromBlob(blob));
+    } catch (error) {
+      console.warn(`Missing texture for ${savedObject.name}`, error);
+    }
   }
 
   const node = attachObject(

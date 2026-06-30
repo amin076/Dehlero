@@ -1,8 +1,13 @@
 import type * as THREE from "three";
 import type { SceneNode } from "../core/scene/SceneNode";
 import type { SceneRegistry } from "../core/scene/SceneRegistry";
-import { exportProjectFile } from "../core/persistence/exportProjectFile";
 import { ACTIVE_PROJECT_STORAGE_KEY } from "./studioConstants";
+import {
+  chooseDehleroImportFile,
+  exportProjectFileBundle,
+  exportSceneFile,
+  importDehleroFile,
+} from "./studioImportExportService";
 import {
   applySavedObjectToScene,
   getNextUntitledSceneName,
@@ -11,7 +16,7 @@ import {
   saveSceneToStorage,
   serializeScene as serializeSceneData,
 } from "./studioScenePersistence";
-import { loadProjectByName } from "./studioStorage";
+import { getProjectNames, loadProjectByName } from "./studioStorage";
 import type {
   LibraryItem,
   NodeSource,
@@ -77,6 +82,7 @@ export function createProjectController({
 
   function saveScene() {
     const savedScene = serializeScene();
+
     saveSceneToStorage(savedScene);
     sceneBuilder.refreshProjects(savedScene.name);
     sceneBuilder.setStatus(`Saved: ${savedScene.name}`);
@@ -84,19 +90,37 @@ export function createProjectController({
 
   function exportScene() {
     const savedScene = serializeScene();
+
     saveSceneToStorage(savedScene);
     sceneBuilder.refreshProjects(savedScene.name);
-    exportProjectFile(savedScene.name, savedScene);
-    sceneBuilder.setStatus(`Exported: ${savedScene.name}`);
+    exportSceneFile(savedScene);
+    sceneBuilder.setStatus(`Exported scene: ${savedScene.name}`);
+  }
+
+  function exportProject() {
+    const currentScene = serializeScene();
+
+    saveSceneToStorage(currentScene);
+
+    const scenes = getProjectNames()
+      .map((projectName) => loadProjectByName(projectName))
+      .filter((savedScene): savedScene is SavedScene => Boolean(savedScene));
+
+    if (scenes.length === 0) {
+      sceneBuilder.setStatus("No scenes to export");
+      return;
+    }
+
+    exportProjectFileBundle({
+      activeSceneName: currentScene.name,
+      scenes,
+    });
+
+    sceneBuilder.refreshProjects(currentScene.name);
+    sceneBuilder.setStatus(`Exported project: ${scenes.length} scene(s)`);
   }
 
   function saveCurrentSceneSilently() {
-    const expectedMainCameraKey = `${sceneBuilder.getSceneName()} / Main View Camera`;
-
-    if (expectedMainCameraKey) {
-      registerTheatreMainCamera();
-    }
-
     saveCurrentSceneToStorage(serializeScene());
   }
 
@@ -140,6 +164,7 @@ export function createProjectController({
     if (projectName === currentName) return;
 
     saveCurrentSceneSilently();
+
     const savedScene = getSavedProject(projectName);
 
     if (!savedScene) {
@@ -171,6 +196,27 @@ export function createProjectController({
     sceneBuilder.setStatus("New scene");
   }
 
+  async function importProjectOrScene() {
+    const file = await chooseDehleroImportFile();
+
+    if (!file) return;
+
+    try {
+      saveCurrentSceneSilently();
+
+      const result = await importDehleroFile(file);
+
+      await loadSavedScene(result.activeScene);
+      sceneBuilder.refreshProjects(result.activeScene.name);
+      sceneBuilder.setStatus(
+        `Imported ${result.importedScenes.length} scene(s): ${result.activeScene.name}`,
+      );
+    } catch (error) {
+      console.error(error);
+      sceneBuilder.setStatus("Import failed");
+    }
+  }
+
   function refreshProjectsFromActiveProject() {
     sceneBuilder.refreshProjects(
       localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) ?? undefined,
@@ -197,12 +243,17 @@ export function createProjectController({
     serializeScene,
     saveScene,
     exportScene,
+    exportProject,
     saveCurrentSceneSilently,
     loadSavedScene,
     loadScene,
     switchScene,
     newScene,
+    importProjectOrScene,
     refreshProjectsFromActiveProject,
     loadActiveProject,
   };
 }
+
+export type ProjectController = ReturnType<typeof createProjectController>;
+

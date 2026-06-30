@@ -35,9 +35,17 @@ export class RecordingManager {
   }
 
   getRecordingSize(aspect: RecordingAspect): RecordingSize {
-    return aspect === "9:16"
-      ? { width: 720, height: 1280 }
-      : { width: 1280, height: 720 };
+    switch (aspect) {
+      case "9:16":
+        return { width: 1080, height: 1920 };
+      case "1:1":
+        return { width: 1080, height: 1080 };
+      case "4:5":
+        return { width: 1080, height: 1350 };
+      case "16:9":
+      default:
+        return { width: 1920, height: 1080 };
+    }
   }
 
   isSupported() {
