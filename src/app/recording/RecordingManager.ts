@@ -96,7 +96,7 @@ export class RecordingManager {
     };
 
     recorder.onstop = () => {
-      this.download(chunks, mimeType, aspect);
+      void this.download(chunks, mimeType, aspect);
       stream.getTracks().forEach((track) => track.stop());
       this.restore();
       this.setStatus("Recording saved");
@@ -151,15 +151,40 @@ export class RecordingManager {
     this.onAfterStop?.();
   }
 
-  private download(chunks: Blob[], mimeType: string, aspect: RecordingAspect) {
+  private async download(
+    chunks: Blob[],
+    mimeType: string,
+    aspect: RecordingAspect,
+  ) {
     const blob = new Blob(chunks, { type: mimeType });
-    const url = URL.createObjectURL(blob);
 
+    try {
+      const res = await fetch("/api/dehlero/save-video", {
+        method: "POST",
+        headers: {
+          "Content-Type": "video/webm",
+          "X-Dehlero-Aspect": aspect,
+        },
+        body: blob,
+      });
+
+      const data = await res.json();
+
+      if (data?.ok) {
+        this.setStatus(`Saved: ${data.savedTo}`);
+        console.log("Video saved by Dehlero API:", data.savedTo);
+        return;
+      }
+    } catch (error) {
+      console.warn("API save failed, falling back to browser download", error);
+    }
+
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `dehlero-${aspect.replace(":", "x")}-${Date.now()}.webm`;
+    link.download = `keynu-dehlero-auto-${aspect.replace(":", "x")}-${Date.now()}.webm`;
     link.click();
-
     URL.revokeObjectURL(url);
   }
+
 }

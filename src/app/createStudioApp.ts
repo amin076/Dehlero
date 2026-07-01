@@ -21,6 +21,7 @@ import { createTransformEditor } from "../editor/TransformEditor";
 import { createStudioCamera } from "../engine/camera/createStudioCamera";
 import { createRenderer } from "../engine/renderer/createRenderer";
 import { createScene } from "../engine/scene/createScene";
+import { startStudioAgentRuntime } from "./studioAgentRuntime";
 import { createViewportToolbar } from "./ui/createViewportToolbar";
 import {
   CAMERA_SHOT_LABELS,
@@ -876,31 +877,31 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
     return getShotTargetFromSelection(selection.getSelected());
   }
 
-function cameraShotToShotType(shot: CameraShot): ShotType {
-  switch (shot) {
-    case "orbit":
-      return "orbit";
+  function cameraShotToShotType(shot: CameraShot): ShotType {
+    switch (shot) {
+      case "orbit":
+        return "orbit";
 
-    case "close-up":
-      return "close-up";
+      case "close-up":
+        return "close-up";
 
-    case "crane-up":
-    case "crane-down":
-      return "crane";
+      case "crane-up":
+      case "crane-down":
+        return "crane";
 
-    case "dolly-in":
-    case "dolly-out":
-    case "dolly-zoom":
-      return "dolly";
+      case "dolly-in":
+      case "dolly-out":
+      case "dolly-zoom":
+        return "dolly";
 
-    case "static":
-    case "pan-left":
-    case "pan-right":
-    case "hero":
-    default:
-      return "static";
+      case "static":
+      case "pan-left":
+      case "pan-right":
+      case "hero":
+      default:
+        return "static";
+    }
   }
-}
 
   function applyCameraShot(
     shot: CameraShot,
@@ -955,7 +956,8 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
       heightMultiplier: options.heightMultiplier,
       fov: options.fov,
       start() {
-        const liveShotDefinition = shotRepository.getById(nextAnimation.id) ?? shotDefinition;
+        const liveShotDefinition =
+          shotRepository.getById(nextAnimation.id) ?? shotDefinition;
         shotOverlayScheduler.play(liveShotDefinition.overlays);
         runtime = createShotRuntimeState({
           shotCamera,
@@ -1015,7 +1017,9 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
 
   function playTheatreSequence() {
     if (!THEATRE_INTEGRATION_ENABLED) {
-      sceneBuilder.setStatus("Theatre is disabled. Use Dehlero Timeline Play instead.");
+      sceneBuilder.setStatus(
+        "Theatre is disabled. Use Dehlero Timeline Play instead.",
+      );
       return;
     }
     if (!theatreSheet) {
@@ -1067,7 +1071,9 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
     if (!THEATRE_INTEGRATION_ENABLED) {
       workspaceController?.setMode("animate");
       timelineController.refresh();
-      sceneBuilder.setStatus("Theatre is disabled. Use the native Dehlero timeline.");
+      sceneBuilder.setStatus(
+        "Theatre is disabled. Use the native Dehlero timeline.",
+      );
       return;
     }
     try {
@@ -1086,7 +1092,9 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
 
   function restoreTheatreStudioWithShots() {
     if (!THEATRE_INTEGRATION_ENABLED) {
-      sceneBuilder.setStatus("Theatre baking is disabled. Use Dehlero Timeline Play/Record.");
+      sceneBuilder.setStatus(
+        "Theatre baking is disabled. Use Dehlero Timeline Play/Record.",
+      );
       return;
     }
     bakeShotsToTheatre();
@@ -1515,12 +1523,18 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
   function addDefaultProjectObjects() {
     // Keep startup clean but demonstrate the improved default library.
     // Users can add the full library from the left Scene Builder panel.
-    ["Cube", "Sphere", "Cylinder", "Plane", "Directional", "Point", "Camera"].forEach(
-      (label) => {
-        const item = library.find((candidate) => candidate.label === label);
-        if (item) addLibraryObject(item);
-      },
-    );
+    [
+      "Cube",
+      "Sphere",
+      "Cylinder",
+      "Plane",
+      "Directional",
+      "Point",
+      "Camera",
+    ].forEach((label) => {
+      const item = library.find((candidate) => candidate.label === label);
+      if (item) addLibraryObject(item);
+    });
   }
 
   const sceneBuilder = createSceneBuilderPanel({
@@ -1660,7 +1674,18 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
       },
     });
   }
+  startStudioAgentRuntime({
+    scene,
+    camera,
+    controls,
+    startRecording,
+    stopRecording,
 
+    recordTimeline,
+
+    playTimeline: playDirectorTimeline,
+    stopTimeline: stopDirectorTimeline,
+  });
   timelineDock = createTimelineDock({
     root,
     playTimeline: playDirectorTimeline,
@@ -1686,47 +1711,49 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
     },
   });
 
-  if (THEATRE_INTEGRATION_ENABLED) try {
-    theatreSheet = getProject("Dehlero Motion").sheet("Scene");
-    studio.extend(
-      {
-        id: "dehlero-shot-tools",
-        panes: [
-          {
-            class: "dehlero-shot-director",
-            mount({ node, paneId }) {
-              mountedTheatreShotPaneIds.add(paneId);
-              theatreShotPaneCreated = true;
+  if (THEATRE_INTEGRATION_ENABLED)
+    try {
+      theatreSheet = getProject("Dehlero Motion").sheet("Scene");
+      studio.extend(
+        {
+          id: "dehlero-shot-tools",
+          panes: [
+            {
+              class: "dehlero-shot-director",
+              mount({ node, paneId }) {
+                mountedTheatreShotPaneIds.add(paneId);
+                theatreShotPaneCreated = true;
 
-              if (mountedTheatreShotPaneIds.size > 1) {
-                window.requestAnimationFrame(() => {
-                  cleanupDuplicateTheatreShotPanes();
-                });
-              }
+                if (mountedTheatreShotPaneIds.size > 1) {
+                  window.requestAnimationFrame(() => {
+                    cleanupDuplicateTheatreShotPanes();
+                  });
+                }
 
-              theatreShotPaneRoot = node;
-              renderTheatreShotPane();
-              return () => {
-                mountedTheatreShotPaneIds.delete(paneId);
-                if (theatreShotPaneRoot === node) theatreShotPaneRoot = null;
-              };
+                theatreShotPaneRoot = node;
+                renderTheatreShotPane();
+                return () => {
+                  mountedTheatreShotPaneIds.delete(paneId);
+                  if (theatreShotPaneRoot === node) theatreShotPaneRoot = null;
+                };
+              },
             },
-          },
-        ],
-      },
-      { __experimental_reconfigure: true },
-    );
-    studio.setSelection([theatreSheet]);
-    void studioInitialization.then(() => {
-      studio.ui.hide();
-      cleanupDuplicateTheatreShotPanes();
-      sceneBuilder.setStatus("Theatre ready");
-    });
-  } catch (error) {
-    console.error(error);
-    theatreSheet = null;
-    sceneBuilder.setStatus("Theatre failed to initialize");
-  } else {
+          ],
+        },
+        { __experimental_reconfigure: true },
+      );
+      studio.setSelection([theatreSheet]);
+      void studioInitialization.then(() => {
+        studio.ui.hide();
+        cleanupDuplicateTheatreShotPanes();
+        sceneBuilder.setStatus("Theatre ready");
+      });
+    } catch (error) {
+      console.error(error);
+      theatreSheet = null;
+      sceneBuilder.setStatus("Theatre failed to initialize");
+    }
+  else {
     theatreSheet = null;
     sceneBuilder.setStatus("Native Dehlero timeline ready");
   }
