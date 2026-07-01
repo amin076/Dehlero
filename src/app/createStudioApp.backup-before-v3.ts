@@ -8,7 +8,6 @@ import { exportProjectFile } from "../core/persistence/exportProjectFile";
 import { HierarchyPanel } from "../editor/HierarchyPanel";
 import { setActiveOverlayManager } from "./overlay/OverlayService";
 import { ShotOverlayScheduler } from "./shots/ShotOverlayScheduler";
-import { ShotRepository } from "./shots/ShotRepository";
 import { createShotDefinition } from "./shots/createShotDefinition";
 import type { ShotType } from "./shots/ShotTypes";
 import { RecordingManager } from "./recording";
@@ -31,10 +30,7 @@ import type {
   CameraOption,
   CameraShot,
   LibraryItem,
-  MotionEasing,
   MotionPreset,
-  MotionTransform,
-  ObjectMotionMode,
   NodeSource,
   RecordingAspect,
   SavedScene,
@@ -67,10 +63,7 @@ import {
   pickNode as pickNodeFromScene,
   attachPickingEvents,
 } from "./studioScenePicking";
-import {
-  createObjectMotionAnimation,
-  transformFromObject,
-} from "./studioObjectMotions";
+import { createObjectMotionAnimation } from "./studioObjectMotions";
 import {
   createShotRuntimeState,
   calculateCameraShotState,
@@ -103,8 +96,6 @@ import type { RecordingState } from "./studioRecording";
 
 CameraControls.install({ THREE });
 
-const THEATRE_INTEGRATION_ENABLED = false;
-
 export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   root.innerHTML = "";
   root.className = "studio-shell";
@@ -124,12 +115,6 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   let theatreSheet: ISheet | null = null;
   let theatreMainCamera: ISheetObject<any> | null = null;
   let theatreMainCameraUnsubscribe: (() => void) | null = null;
-  let objectMotionDraft: {
-    nodeId: string;
-    nodeName: string;
-    start: MotionTransform | null;
-    end: MotionTransform | null;
-  } | null = null;
   let transformScrub: IScrub | null = null;
   let isTheatreSequencePlaying = false;
   let isPushingEditorTransformToTheatre = false;
@@ -153,11 +138,10 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   viewport.className = "dehlero-viewport";
   root.appendChild(viewport);
   viewport.appendChild(renderer.domElement);
-  const overlayManager = createOverlayManager(viewport, scene);
+  const overlayManager = createOverlayManager(viewport);
   setActiveOverlayManager(overlayManager);
 
   const shotOverlayScheduler = new ShotOverlayScheduler();
-  const shotRepository = new ShotRepository();
 
   function toOverlayAspect(aspect: RecordingAspect) {
     switch (aspect) {
@@ -234,7 +218,7 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
       overlayManager.showTitle({
         eyebrow: "Coming Soon",
         title: "Titan World Cup 3026",
-        subtitle: " Esbiko cinematic simulation",
+        subtitle: "A Dehlero cinematic simulation",
         durationMs: 4500,
       });
     }
@@ -279,13 +263,11 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   });
 
   transformEditor.controls.addEventListener("mouseDown", () => {
-    if (!THEATRE_INTEGRATION_ENABLED) return;
     transformScrub?.discard();
     transformScrub = studio.scrub();
   });
 
   transformEditor.controls.addEventListener("objectChange", () => {
-    if (!THEATRE_INTEGRATION_ENABLED) return;
     const node = selection.getSelected();
     const binding = node ? theatreBindings.get(node.id) : null;
     if (!node || !binding) return;
@@ -320,7 +302,6 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   });
 
   transformEditor.controls.addEventListener("mouseUp", () => {
-    if (!THEATRE_INTEGRATION_ENABLED) return;
     transformScrub?.commit();
     transformScrub = null;
   });
@@ -340,7 +321,7 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   function registerTheatreObject(node: SceneNode) {
-    if (!THEATRE_INTEGRATION_ENABLED || !theatreSheet) return;
+    if (!theatreSheet) return;
 
     const source = node.metadata.source as NodeSource | undefined;
     if (source?.type === "ambient") return;
@@ -419,7 +400,7 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   function registerTheatreMainCamera() {
-    if (!THEATRE_INTEGRATION_ENABLED || !theatreSheet) return;
+    if (!theatreSheet) return;
 
     if (theatreMainCamera) {
       theatreMainCameraUnsubscribe?.();
@@ -461,7 +442,6 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   }
 
   function unregisterTheatreObject(node: SceneNode) {
-    if (!THEATRE_INTEGRATION_ENABLED) return;
     const binding = theatreBindings.get(node.id);
     if (!binding || !theatreSheet) return;
 
@@ -762,10 +742,6 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
       loop?: boolean;
       silent?: boolean;
       targetNode?: SceneNode | null;
-      fromTransform?: MotionTransform;
-      toTransform?: MotionTransform;
-      motionMode?: ObjectMotionMode;
-      easing?: MotionEasing;
     } = {},
   ) {
     const node = options.targetNode ?? selection.getSelected();
@@ -787,89 +763,10 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
           )?.delay ??
           0,
         loop: options.loop ?? (preset === "spin" || preset === "float"),
-        fromTransform: options.fromTransform,
-        toTransform: options.toTransform,
-        motionMode: options.motionMode,
-        easing: options.easing,
       }),
     );
 
     if (!options.silent) sceneBuilder.setStatus(`Motion added: ${preset}`);
-  }
-
-  function captureObjectMotionStart() {
-    const node = selection.getSelected();
-
-    if (!node) {
-      sceneBuilder.setStatus("Select an object first");
-      return;
-    }
-
-    objectMotionDraft = {
-      nodeId: node.id,
-      nodeName: node.name,
-      start: transformFromObject(node.root),
-      end: objectMotionDraft?.nodeId === node.id ? objectMotionDraft.end : null,
-    };
-
-    sceneBuilder.setStatus(`Motion start captured: ${node.name}`);
-  }
-
-  function captureObjectMotionEnd() {
-    const node = selection.getSelected();
-
-    if (!node) {
-      sceneBuilder.setStatus("Select an object first");
-      return;
-    }
-
-    if (!objectMotionDraft || objectMotionDraft.nodeId !== node.id) {
-      objectMotionDraft = {
-        nodeId: node.id,
-        nodeName: node.name,
-        start: null,
-        end: transformFromObject(node.root),
-      };
-    } else {
-      objectMotionDraft.end = transformFromObject(node.root);
-    }
-
-    sceneBuilder.setStatus(`Motion end captured: ${node.name}`);
-  }
-
-  function addCustomObjectMotion(
-    duration: number,
-    motionMode: ObjectMotionMode = "move-rotate-scale",
-  ) {
-    const node = selection.getSelected();
-
-    if (!node) {
-      sceneBuilder.setStatus("Select an object first");
-      return;
-    }
-
-    if (!objectMotionDraft || objectMotionDraft.nodeId !== node.id) {
-      sceneBuilder.setStatus(
-        "Capture Start and End for the selected object first",
-      );
-      return;
-    }
-
-    if (!objectMotionDraft.start || !objectMotionDraft.end) {
-      sceneBuilder.setStatus("Capture both Start and End before adding motion");
-      return;
-    }
-
-    applyObjectMotion("transform", duration, {
-      targetNode: node,
-      fromTransform: objectMotionDraft.start,
-      toTransform: objectMotionDraft.end,
-      motionMode,
-      easing: "ease-in-out",
-      loop: false,
-    });
-
-    sceneBuilder.setStatus(`Custom object motion added: ${node.name}`);
   }
 
   function getShotTarget() {
@@ -934,11 +831,6 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
       Math.max(timelineController.getCameraShotCursor(), delay + duration),
     );
 
-    const shotDefinition = createShotDefinition(
-      cameraShotToShotType(shot),
-      duration,
-    );
-
     const nextAnimation = timelineController.addTimelineAnimation({
       name: CAMERA_SHOT_LABELS[shot],
       kind: "camera-shot",
@@ -955,8 +847,11 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
       heightMultiplier: options.heightMultiplier,
       fov: options.fov,
       start() {
-        const liveShotDefinition = shotRepository.getById(nextAnimation.id) ?? shotDefinition;
-        shotOverlayScheduler.play(liveShotDefinition.overlays);
+        const shotDefinition = createShotDefinition(
+          cameraShotToShotType(shot),
+          duration,
+        );
+        shotOverlayScheduler.play(shotDefinition.overlays);
         runtime = createShotRuntimeState({
           shotCamera,
           selectedTarget,
@@ -997,11 +892,6 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
       },
     });
 
-    shotDefinition.id = nextAnimation.id;
-    shotDefinition.name = nextAnimation.name;
-    shotDefinition.duration = duration;
-    shotRepository.add(shotDefinition);
-
     const newestShot = getCameraShotAnimations()
       .slice()
       .sort((first, second) => second.delay - first.delay)[0];
@@ -1014,10 +904,6 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
   }
 
   function playTheatreSequence() {
-    if (!THEATRE_INTEGRATION_ENABLED) {
-      sceneBuilder.setStatus("Theatre is disabled. Use Dehlero Timeline Play instead.");
-      return;
-    }
     if (!theatreSheet) {
       sceneBuilder.setStatus("Theatre is not ready");
       return;
@@ -1037,7 +923,7 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
   }
 
   function hasTheatreAnimation() {
-    if (!THEATRE_INTEGRATION_ENABLED || !theatreSheet) return false;
+    if (!theatreSheet) return false;
     const sheet = theatreSheet;
 
     const objects = [
@@ -1064,12 +950,6 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
   }
 
   function restoreTheatreStudio() {
-    if (!THEATRE_INTEGRATION_ENABLED) {
-      workspaceController?.setMode("animate");
-      timelineController.refresh();
-      sceneBuilder.setStatus("Theatre is disabled. Use the native Dehlero timeline.");
-      return;
-    }
     try {
       workspaceController?.setMode("animate");
       timelineController.pauseTimeline();
@@ -1085,10 +965,6 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
   }
 
   function restoreTheatreStudioWithShots() {
-    if (!THEATRE_INTEGRATION_ENABLED) {
-      sceneBuilder.setStatus("Theatre baking is disabled. Use Dehlero Timeline Play/Record.");
-      return;
-    }
     bakeShotsToTheatre();
     restoreTheatreStudio();
     ensureTheatreShotPane();
@@ -1096,10 +972,6 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
   }
 
   function bakeShotsToTheatre() {
-    if (!THEATRE_INTEGRATION_ENABLED) {
-      sceneBuilder.setStatus("Theatre baking is disabled.");
-      return;
-    }
     if (!theatreSheet) {
       sceneBuilder.setStatus("Theatre is not ready");
       return;
@@ -1296,7 +1168,7 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
       helper.update();
     });
 
-    if (!THEATRE_INTEGRATION_ENABLED || !theatreSheet) return;
+    if (!theatreSheet) return;
 
     const binding = selectedNode
       ? theatreBindings.get(selectedNode.id)
@@ -1346,7 +1218,6 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
     transformEditor.refresh();
     hierarchyPanel.refresh();
     timelineController.clearTimeline();
-    shotRepository.clear();
   }
 
   function serializeScene(): SavedScene {
@@ -1590,12 +1461,6 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
     previewCameraShot,
     updateCameraShotDuration: timelineController.updateCameraShotDuration,
     updateCameraShotRigOptions: timelineController.updateCameraShotRigOptions,
-    shotRepository,
-    shotOverlayScheduler,
-    getSelectedTargetName: () => selection.getSelected()?.name ?? null,
-    captureObjectMotionStart,
-    captureObjectMotionEnd,
-    addCustomObjectMotion,
   });
 
   const recordingManager = new RecordingManager(
@@ -1604,14 +1469,16 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
     (message) => productionPanel?.setStatus(message),
     () => {
       enterRecordViewportMode();
-      overlayManager.setRecording(true);
 
       timelineController.rewindTimeline();
 
-      void hasTheatreAnimation(); // keep Theatre guard compiled, but recording uses native timeline only.
+      if (theatreSheet && hasTheatreAnimation()) {
+        pauseDirectorTimeline();
+        theatreSheet.sequence.position = 0;
+        void theatreSheet.sequence.play();
+      }
     },
     () => {
-      overlayManager.setRecording(false);
       exitRecordViewportMode();
     },
   );
@@ -1674,19 +1541,16 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
     root,
     onSave: saveScene,
     onModeChange(mode) {
-      // Native Dehlero panels are used. Theatre Studio UI is intentionally not opened.
-      if (THEATRE_INTEGRATION_ENABLED) {
-        if (mode === "animate") {
-          studio.ui.restore();
-        } else {
-          studio.ui.hide();
-        }
+      if (mode === "animate") {
+        studio.ui.restore();
+      } else {
+        studio.ui.hide();
       }
       window.dispatchEvent(new Event("resize"));
     },
   });
 
-  if (THEATRE_INTEGRATION_ENABLED) try {
+  try {
     theatreSheet = getProject("Dehlero Motion").sheet("Scene");
     studio.extend(
       {
@@ -1726,9 +1590,6 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
     console.error(error);
     theatreSheet = null;
     sceneBuilder.setStatus("Theatre failed to initialize");
-  } else {
-    theatreSheet = null;
-    sceneBuilder.setStatus("Native Dehlero timeline ready");
   }
 
   migrateLegacySceneStorage();
@@ -1787,9 +1648,7 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
 
     programController.update(delta);
 
-    const activeRenderCamera = getActiveRenderCamera();
-    overlayManager.updateCanvasTitle(activeRenderCamera);
-    renderer.render(scene, activeRenderCamera);
+    renderer.render(scene, getActiveRenderCamera());
   }
 
   resize();

@@ -1,0 +1,31 @@
+{
+  "id": "titan",
+  "name": "Titan",
+  "type": "procedural-planet",
+  "category": "astronomy/moons",
+  "description": "Titan moon asset for Titan World Cup 2226.",
+  "model": null,
+  "textures": {
+    "albedo": "textures/titan_albedo.jpg",
+    "normal": null,
+    "roughness": null,
+    "height": null
+  },
+  "components": {
+    "sphere": true,
+    "rings": false
+  },
+  "defaultTransform": {
+    "position": [3.5, 0, 0],
+    "rotation": [0, 0, 0],
+    "scale": [1.2, 1.2, 1.2]
+  },
+  "visual": {
+    "radius": 1,
+    "segments": 96
+  },
+  "metadata": {
+    "moon": "Titan",
+    "family": "saturn-system"
+  }
+}
