@@ -1,0 +1,15 @@
+{
+  "dehleroCommand": true,
+  "version": "0.1",
+  "commands": [
+    {
+      "type": "addPrimitive",
+      "primitive": "cube",
+      "id": "red_cube_01",
+      "name": "Red Cube",
+      "position": [0, 1, 0],
+      "scale": [2, 2, 2],
+      "color": "#ff0000"
+    }
+  ]
+}
