@@ -82,7 +82,24 @@ export type MotionPreset =
   | "wave"
   | "spring"
   | "figure-eight"
-  | "camera-orbit";
+  | "camera-orbit"
+  | "transform";
+
+
+export type MotionEasing = "linear" | "ease-in-out";
+
+export type MotionTransform = {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+};
+
+export type ObjectMotionMode =
+  | "transform"
+  | "move"
+  | "rotate"
+  | "scale"
+  | "move-rotate-scale";
 
 export type CameraShot =
   | "static"
@@ -126,6 +143,11 @@ export type SavedTimelineClip =
       duration: number;
       targetName: string;
       loop: boolean;
+      objectId?: string;
+      motionMode?: ObjectMotionMode;
+      easing?: MotionEasing;
+      fromTransform?: MotionTransform;
+      toTransform?: MotionTransform;
     };
 
 export type CameraOption = {
@@ -160,6 +182,11 @@ export type TimelineAnimation = {
     preset?: MotionPreset;
     shot?: CameraShot;
     targetLabel?: string;
+    objectId?: string;
+    motionMode?: ObjectMotionMode;
+    easing?: MotionEasing;
+    fromTransform?: MotionTransform;
+    toTransform?: MotionTransform;
   };
   elapsed: number;
   delay: number;

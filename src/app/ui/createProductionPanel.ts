@@ -18,6 +18,7 @@ import type {
   CameraShot,
   CameraShotRigOptions,
   MotionPreset,
+  ObjectMotionMode,
   RecordingAspect,
 } from "../studioTypes";
 import type { ShotDefinition, ShotType } from "../shots/ShotTypes";
@@ -140,6 +141,9 @@ export type CreateProductionPanelOptions = {
    * metadata later, the inspector meta block will show it automatically.
    */
   getSelectedTargetName?: () => string | null;
+  captureObjectMotionStart?: () => void;
+  captureObjectMotionEnd?: () => void;
+  addCustomObjectMotion?: (duration: number, motionMode?: ObjectMotionMode) => void;
 };
 
 type PanelApi = {
@@ -216,6 +220,9 @@ export function createProductionPanel(
     shotRepository,
     shotOverlayScheduler,
     getSelectedTargetName,
+    captureObjectMotionStart,
+    captureObjectMotionEnd,
+    addCustomObjectMotion,
   } = opts;
 
   const panel = document.createElement("aside");
@@ -348,6 +355,36 @@ export function createProductionPanel(
       viewMainCamera();
       renderInspector();
       setStatus("Viewing main camera");
+    });
+
+    on("#pp-motion-start", () => {
+      captureObjectMotionStart?.();
+      setStatus("Object motion start captured");
+    });
+
+    on("#pp-motion-end", () => {
+      captureObjectMotionEnd?.();
+      setStatus("Object motion end captured");
+    });
+
+    on("#pp-motion-add-transform", () => {
+      addCustomObjectMotion?.(shotDuration(), "move-rotate-scale");
+      setStatus("Object motion clip added");
+    });
+
+    on("#pp-motion-add-move", () => {
+      addCustomObjectMotion?.(shotDuration(), "move");
+      setStatus("Move motion clip added");
+    });
+
+    on("#pp-motion-add-rotate", () => {
+      addCustomObjectMotion?.(shotDuration(), "rotate");
+      setStatus("Rotate motion clip added");
+    });
+
+    on("#pp-motion-add-scale", () => {
+      addCustomObjectMotion?.(shotDuration(), "scale");
+      setStatus("Scale motion clip added");
     });
 
     on("#pp-theatre-play", () => {
@@ -1164,17 +1201,26 @@ function markup(): string {
       `<button type="button" data-camera-shot="${value}">${label}</button>`,
   ).join("");
 
-  const motionButtons = MOTION_PRESETS.length
-    ? `
-      <div class="production-section-title">Object Motion</div>
-      <div class="pp-grid-2">
-        ${MOTION_PRESETS.map(
+  const motionButtons = `
+    <div class="production-section-title">Object Motion</div>
+    <div class="pp-note">Select an object, capture Start, move/rotate/scale it, capture End, then add a motion clip.</div>
+    <div class="pp-grid-3">
+      <button type="button" id="pp-motion-start">Capture Start</button>
+      <button type="button" id="pp-motion-end">Capture End</button>
+      <button type="button" id="pp-motion-add-transform">Add Motion Clip</button>
+    </div>
+    <div class="pp-grid-3">
+      <button type="button" id="pp-motion-add-move">Move Only</button>
+      <button type="button" id="pp-motion-add-rotate">Rotate Only</button>
+      <button type="button" id="pp-motion-add-scale">Scale Only</button>
+    </div>
+    ${MOTION_PRESETS.length
+      ? `<div class="pp-grid-2">${MOTION_PRESETS.map(
           ([value, label]) =>
             `<button type="button" data-motion="${String(value)}">${label}</button>`,
-        ).join("")}
-      </div>
-    `
-    : "";
+        ).join("")}</div>`
+      : ""}
+  `;
 
   return `
     <div

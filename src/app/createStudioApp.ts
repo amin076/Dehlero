@@ -31,7 +31,10 @@ import type {
   CameraOption,
   CameraShot,
   LibraryItem,
+  MotionEasing,
   MotionPreset,
+  MotionTransform,
+  ObjectMotionMode,
   NodeSource,
   RecordingAspect,
   SavedScene,
@@ -64,7 +67,10 @@ import {
   pickNode as pickNodeFromScene,
   attachPickingEvents,
 } from "./studioScenePicking";
-import { createObjectMotionAnimation } from "./studioObjectMotions";
+import {
+  createObjectMotionAnimation,
+  transformFromObject,
+} from "./studioObjectMotions";
 import {
   createShotRuntimeState,
   calculateCameraShotState,
@@ -118,6 +124,12 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
   let theatreSheet: ISheet | null = null;
   let theatreMainCamera: ISheetObject<any> | null = null;
   let theatreMainCameraUnsubscribe: (() => void) | null = null;
+  let objectMotionDraft: {
+    nodeId: string;
+    nodeName: string;
+    start: MotionTransform | null;
+    end: MotionTransform | null;
+  } | null = null;
   let transformScrub: IScrub | null = null;
   let isTheatreSequencePlaying = false;
   let isPushingEditorTransformToTheatre = false;
@@ -222,7 +234,7 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
       overlayManager.showTitle({
         eyebrow: "Coming Soon",
         title: "Titan World Cup 3026",
-        subtitle: "A Dehlero cinematic simulation",
+        subtitle: " Esbiko cinematic simulation",
         durationMs: 4500,
       });
     }
@@ -750,6 +762,10 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
       loop?: boolean;
       silent?: boolean;
       targetNode?: SceneNode | null;
+      fromTransform?: MotionTransform;
+      toTransform?: MotionTransform;
+      motionMode?: ObjectMotionMode;
+      easing?: MotionEasing;
     } = {},
   ) {
     const node = options.targetNode ?? selection.getSelected();
@@ -771,10 +787,89 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
           )?.delay ??
           0,
         loop: options.loop ?? (preset === "spin" || preset === "float"),
+        fromTransform: options.fromTransform,
+        toTransform: options.toTransform,
+        motionMode: options.motionMode,
+        easing: options.easing,
       }),
     );
 
     if (!options.silent) sceneBuilder.setStatus(`Motion added: ${preset}`);
+  }
+
+  function captureObjectMotionStart() {
+    const node = selection.getSelected();
+
+    if (!node) {
+      sceneBuilder.setStatus("Select an object first");
+      return;
+    }
+
+    objectMotionDraft = {
+      nodeId: node.id,
+      nodeName: node.name,
+      start: transformFromObject(node.root),
+      end: objectMotionDraft?.nodeId === node.id ? objectMotionDraft.end : null,
+    };
+
+    sceneBuilder.setStatus(`Motion start captured: ${node.name}`);
+  }
+
+  function captureObjectMotionEnd() {
+    const node = selection.getSelected();
+
+    if (!node) {
+      sceneBuilder.setStatus("Select an object first");
+      return;
+    }
+
+    if (!objectMotionDraft || objectMotionDraft.nodeId !== node.id) {
+      objectMotionDraft = {
+        nodeId: node.id,
+        nodeName: node.name,
+        start: null,
+        end: transformFromObject(node.root),
+      };
+    } else {
+      objectMotionDraft.end = transformFromObject(node.root);
+    }
+
+    sceneBuilder.setStatus(`Motion end captured: ${node.name}`);
+  }
+
+  function addCustomObjectMotion(
+    duration: number,
+    motionMode: ObjectMotionMode = "move-rotate-scale",
+  ) {
+    const node = selection.getSelected();
+
+    if (!node) {
+      sceneBuilder.setStatus("Select an object first");
+      return;
+    }
+
+    if (!objectMotionDraft || objectMotionDraft.nodeId !== node.id) {
+      sceneBuilder.setStatus(
+        "Capture Start and End for the selected object first",
+      );
+      return;
+    }
+
+    if (!objectMotionDraft.start || !objectMotionDraft.end) {
+      sceneBuilder.setStatus("Capture both Start and End before adding motion");
+      return;
+    }
+
+    applyObjectMotion("transform", duration, {
+      targetNode: node,
+      fromTransform: objectMotionDraft.start,
+      toTransform: objectMotionDraft.end,
+      motionMode,
+      easing: "ease-in-out",
+      loop: false,
+    });
+
+    sceneBuilder.setStatus(`Custom object motion added: ${node.name}`);
   }
 
   function getShotTarget() {
@@ -1498,6 +1593,9 @@ function cameraShotToShotType(shot: CameraShot): ShotType {
     shotRepository,
     shotOverlayScheduler,
     getSelectedTargetName: () => selection.getSelected()?.name ?? null,
+    captureObjectMotionStart,
+    captureObjectMotionEnd,
+    addCustomObjectMotion,
   });
 
   const recordingManager = new RecordingManager(

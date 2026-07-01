@@ -183,6 +183,11 @@ export function serializeTimeline(
             duration: animation.duration,
             targetName: animation.metadata.targetLabel,
             loop: animation.loop,
+            ...(animation.metadata.objectId ? { objectId: animation.metadata.objectId } : {}),
+            ...(animation.metadata.motionMode ? { motionMode: animation.metadata.motionMode } : {}),
+            ...(animation.metadata.easing ? { easing: animation.metadata.easing } : {}),
+            ...(animation.metadata.fromTransform ? { fromTransform: animation.metadata.fromTransform } : {}),
+            ...(animation.metadata.toTransform ? { toTransform: animation.metadata.toTransform } : {}),
           },
         ];
       }
@@ -260,10 +265,8 @@ export function updateTimelineAnimations({
 
       if (animation.loop) {
         animation.elapsed = 0;
-      } else if (animation.kind === "camera-shot") {
-        animation.finished = true;
       } else {
-        activeAnimations.splice(index, 1);
+        animation.finished = true;
       }
     }
   }

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { SceneNode } from "../core/scene/SceneNode";
-import type { MotionPreset, TimelineAnimation } from "./studioTypes";
+import type { MotionEasing, MotionPreset, MotionTransform, ObjectMotionMode, TimelineAnimation } from "./studioTypes";
 import { easeInOutCubic, getFirstStandardMaterial } from "./studioMath";
 
 function triangleWave(progress: number) {
@@ -24,7 +24,69 @@ export const MOTION_PRESET_LABELS: ReadonlyArray<readonly [MotionPreset, string]
   ["spring", "Spring"],
   ["figure-eight", "Figure Eight"],
   ["camera-orbit", "Camera Orbit"],
+  ["transform", "Custom Transform"],
 ];
+
+
+export function transformFromObject(object: THREE.Object3D): MotionTransform {
+  return {
+    position: [object.position.x, object.position.y, object.position.z],
+    rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+    scale: [object.scale.x, object.scale.y, object.scale.z],
+  };
+}
+
+function vectorFromTuple(value: [number, number, number]) {
+  return new THREE.Vector3(value[0], value[1], value[2]);
+}
+
+function eulerFromTuple(value: [number, number, number]) {
+  return new THREE.Euler(value[0], value[1], value[2]);
+}
+
+function easeValue(progress: number, easing: MotionEasing = "ease-in-out") {
+  if (easing === "linear") return progress;
+  return easeInOutCubic(progress);
+}
+
+function applyTransformClip({
+  object,
+  progress,
+  fromTransform,
+  toTransform,
+  motionMode,
+  easing,
+}: {
+  object: THREE.Object3D;
+  progress: number;
+  fromTransform: MotionTransform;
+  toTransform: MotionTransform;
+  motionMode: ObjectMotionMode;
+  easing: MotionEasing;
+}) {
+  const eased = easeValue(progress, easing);
+
+  const fromPosition = vectorFromTuple(fromTransform.position);
+  const toPosition = vectorFromTuple(toTransform.position);
+  const fromScale = vectorFromTuple(fromTransform.scale);
+  const toScale = vectorFromTuple(toTransform.scale);
+  const fromRotation = eulerFromTuple(fromTransform.rotation);
+  const toRotation = eulerFromTuple(toTransform.rotation);
+
+  if (motionMode === "transform" || motionMode === "move" || motionMode === "move-rotate-scale") {
+    object.position.copy(fromPosition.lerp(toPosition, eased));
+  }
+
+  if (motionMode === "transform" || motionMode === "rotate" || motionMode === "move-rotate-scale") {
+    const fromQuaternion = new THREE.Quaternion().setFromEuler(fromRotation);
+    const toQuaternion = new THREE.Quaternion().setFromEuler(toRotation);
+    object.quaternion.copy(fromQuaternion.slerp(toQuaternion, eased));
+  }
+
+  if (motionMode === "transform" || motionMode === "scale" || motionMode === "move-rotate-scale") {
+    object.scale.copy(fromScale.lerp(toScale, eased));
+  }
+}
 
 export function createObjectMotionAnimation({
   node,
@@ -32,12 +94,20 @@ export function createObjectMotionAnimation({
   duration,
   delay,
   loop,
+  fromTransform,
+  toTransform,
+  motionMode = "transform",
+  easing = "ease-in-out",
 }: {
   node: SceneNode;
   preset: MotionPreset;
   duration: number;
   delay: number;
   loop: boolean;
+  fromTransform?: MotionTransform;
+  toTransform?: MotionTransform;
+  motionMode?: ObjectMotionMode;
+  easing?: MotionEasing;
 }): Omit<TimelineAnimation, "id" | "elapsed" | "started" | "finished"> {
   const object = node.root;
   const startPosition = object.position.clone();
@@ -58,6 +128,11 @@ export function createObjectMotionAnimation({
     metadata: {
       preset,
       targetLabel: node.name,
+      objectId: node.id,
+      motionMode,
+      easing,
+      fromTransform,
+      toTransform,
     },
     delay,
     duration,
@@ -65,6 +140,18 @@ export function createObjectMotionAnimation({
     update(progress, delta) {
       const eased = easeInOutCubic(progress);
       const angle = progress * Math.PI * 2;
+
+      if (fromTransform && toTransform) {
+        applyTransformClip({
+          object,
+          progress,
+          fromTransform,
+          toTransform,
+          motionMode,
+          easing,
+        });
+        return;
+      }
 
       if (preset === "spin") {
         object.rotation.y = startRotation.y + Math.PI * 2 * progress;

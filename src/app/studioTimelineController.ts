@@ -2,7 +2,10 @@ import type { SceneNode } from "../core/scene/SceneNode";
 import type {
   CameraShot,
   CameraShotRigOptions,
+  MotionEasing,
   MotionPreset,
+  MotionTransform,
+  ObjectMotionMode,
   SavedTimelineClip,
   TimelineAnimation,
   TimelineDockItem,
@@ -52,6 +55,10 @@ export type TimelineControllerDependencies = {
       loop?: boolean;
       silent?: boolean;
       targetNode?: SceneNode | null;
+      fromTransform?: MotionTransform;
+      toTransform?: MotionTransform;
+      motionMode?: ObjectMotionMode;
+      easing?: MotionEasing;
     },
   ) => void;
   findSceneNodeByName: (name?: string) => SceneNode | null;
@@ -397,6 +404,10 @@ export function createTimelineController({
           loop: clip.loop,
           silent: true,
           targetNode,
+          fromTransform: clip.fromTransform,
+          toTransform: clip.toTransform,
+          motionMode: clip.motionMode,
+          easing: clip.easing,
         });
       });
 

@@ -88,11 +88,36 @@ export function createProgrammaticShotController(
     programSelect.appendChild(option);
   });
 
-  const ballSelect = document.createElement("select");
-  ballSelect.title = "Ball Object";
+  function createObjectSelect(titleText: string) {
+    const wrapper = document.createElement("label");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+    wrapper.style.fontSize = "11px";
+    wrapper.style.color = "rgba(255,255,255,0.72)";
 
-  const shuttleSelect = document.createElement("select");
-  shuttleSelect.title = "Shuttle Object";
+    const caption = document.createElement("span");
+    caption.textContent = titleText;
+
+    const select = document.createElement("select");
+    select.title = titleText;
+
+    wrapper.append(caption, select);
+
+    return { wrapper, select };
+  }
+
+  const ballControl = createObjectSelect("Ball");
+  const shuttleControl = createObjectSelect("Shuttle");
+  const saturnControl = createObjectSelect("Saturn");
+  const astronaut1Control = createObjectSelect("Astronaut 1");
+  const astronaut2Control = createObjectSelect("Astronaut 2");
+
+  const ballSelect = ballControl.select;
+  const shuttleSelect = shuttleControl.select;
+  const saturnSelect = saturnControl.select;
+  const astronaut1Select = astronaut1Control.select;
+  const astronaut2Select = astronaut2Control.select;
 
   const refreshButton = document.createElement("button");
   refreshButton.type = "button";
@@ -118,6 +143,9 @@ export function createProgrammaticShotController(
     programSelect,
     ballSelect,
     shuttleSelect,
+    saturnSelect,
+    astronaut1Select,
+    astronaut2Select,
     refreshButton,
     playButton,
     stopButton,
@@ -130,29 +158,34 @@ export function createProgrammaticShotController(
   function refreshObjectOptions() {
     const nodes = getSceneNodes();
 
-    ballSelect.innerHTML = "";
-    shuttleSelect.innerHTML = "";
+    const selects = [
+      { select: ballSelect, placeholder: "Select ball..." },
+      { select: shuttleSelect, placeholder: "Select shuttle..." },
+      { select: saturnSelect, placeholder: "Select Saturn..." },
+      { select: astronaut1Select, placeholder: "Select Astronaut 1..." },
+      { select: astronaut2Select, placeholder: "Select Astronaut 2..." },
+    ];
 
-    const emptyBall = document.createElement("option");
-    emptyBall.value = "";
-    emptyBall.textContent = "Select ball...";
-    ballSelect.appendChild(emptyBall);
+    selects.forEach(({ select, placeholder }) => {
+      const previousValue = select.value;
 
-    const emptyShuttle = document.createElement("option");
-    emptyShuttle.value = "";
-    emptyShuttle.textContent = "Select shuttle...";
-    shuttleSelect.appendChild(emptyShuttle);
+      select.innerHTML = "";
 
-    nodes.forEach((node) => {
-      const ballOption = document.createElement("option");
-      ballOption.value = node.id;
-      ballOption.textContent = node.name;
-      ballSelect.appendChild(ballOption);
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = placeholder;
+      select.appendChild(emptyOption);
 
-      const shuttleOption = document.createElement("option");
-      shuttleOption.value = node.id;
-      shuttleOption.textContent = node.name;
-      shuttleSelect.appendChild(shuttleOption);
+      nodes.forEach((node) => {
+        const option = document.createElement("option");
+        option.value = node.id;
+        option.textContent = node.name;
+        select.appendChild(option);
+      });
+
+      if (previousValue) {
+        select.value = previousValue;
+      }
     });
 
     context.setStatus?.(`Program objects refreshed: ${nodes.length}`);
@@ -185,12 +218,18 @@ export function createProgrammaticShotController(
 
       const nextLeft = Math.max(
         8,
-        Math.min(window.innerWidth - panel.offsetWidth - 8, event.clientX - offsetX),
+        Math.min(
+          window.innerWidth - panel.offsetWidth - 8,
+          event.clientX - offsetX,
+        ),
       );
 
       const nextTop = Math.max(
         8,
-        Math.min(window.innerHeight - panel.offsetHeight - 8, event.clientY - offsetY),
+        Math.min(
+          window.innerHeight - panel.offsetHeight - 8,
+          event.clientY - offsetY,
+        ),
       );
 
       panel.style.left = `${nextLeft}px`;
@@ -228,9 +267,20 @@ export function createProgrammaticShotController(
 
     const ballNode = findNode(ballSelect.value);
     const shuttleNode = findNode(shuttleSelect.value);
+    const saturnNode = findNode(saturnSelect.value);
+    const astronaut1Node = findNode(astronaut1Select.value);
+    const astronaut2Node = findNode(astronaut2Select.value);
 
-    if (!ballNode || !shuttleNode) {
-      context.setStatus?.("Select ball and shuttle objects first");
+    if (
+      !ballNode ||
+      !shuttleNode ||
+      !saturnNode ||
+      !astronaut1Node ||
+      !astronaut2Node
+    ) {
+      context.setStatus?.(
+        "Select Ball, Shuttle, Saturn, Astronaut 1 and Astronaut 2 first",
+      );
       return;
     }
 
@@ -239,7 +289,15 @@ export function createProgrammaticShotController(
     const runtimeBindings: ProgramRuntimeBindings = {
       "hero.ball": ballNode.root,
       "hero.shuttle": shuttleNode.root,
+      "hero.saturn": saturnNode.root,
+      "hero.astronaut1": astronaut1Node.root,
+      "hero.astronaut2": astronaut2Node.root,
     };
+
+    // Expose every scene object by its name
+    for (const node of getSceneNodes()) {
+      runtimeBindings[node.name] = node.root;
+    }
 
     activeProgram = selectedProgram.create({
       ...context,
@@ -257,8 +315,11 @@ export function createProgrammaticShotController(
   panel.append(
     title,
     programSelect,
-    ballSelect,
-    shuttleSelect,
+    ballControl.wrapper,
+    shuttleControl.wrapper,
+    saturnControl.wrapper,
+    astronaut1Control.wrapper,
+    astronaut2Control.wrapper,
     refreshButton,
     playButton,
     stopButton,
