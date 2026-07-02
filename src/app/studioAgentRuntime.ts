@@ -1,5 +1,8 @@
 import * as THREE from "three";
-import { applyAiCommandEnvelope } from "../ai/applyAiCommand";
+import {
+  applyAiCommandEnvelope,
+  updateAiAnimations,
+} from "../ai/applyAiCommand";
 import type { DehleroCommandEnvelope } from "../ai/commandTypes";
 import type { RecordingAspect } from "./studioTypes";
 
@@ -48,6 +51,10 @@ type RuntimeCommand =
   | { type: "stopTimeline" }
   | { type: "wait"; seconds?: number };
 
+type StudioAgentRuntime = {
+  update: () => void;
+};
+
 function sleep(seconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, seconds * 1000));
 }
@@ -63,9 +70,17 @@ function isRuntimeCommand(command: { type: string }): command is RuntimeCommand 
   ].includes(command.type);
 }
 
-export function startStudioAgentRuntime(options: AgentRuntimeOptions) {
+export function startStudioAgentRuntime(
+  options: AgentRuntimeOptions,
+): StudioAgentRuntime {
   let lastText = "";
   let running = false;
+
+  const aiContext = {
+    scene: options.scene,
+    camera: options.camera,
+    controls: options.controls,
+  };
 
   async function runEnvelope(envelope: DehleroCommandEnvelope) {
     if (running) return;
@@ -106,18 +121,11 @@ export function startStudioAgentRuntime(options: AgentRuntimeOptions) {
             await sleep(command.seconds ?? 1);
           }
         } else {
-          applyAiCommandEnvelope(
-            {
-              scene: options.scene,
-              camera: options.camera,
-              controls: options.controls,
-            },
-            {
-              dehleroCommand: true,
-              version: "0.1",
-              commands: [command as never],
-            },
-          );
+          applyAiCommandEnvelope(aiContext, {
+            dehleroCommand: true,
+            version: "0.1",
+            commands: [command as never],
+          });
         }
       }
     } finally {
@@ -150,4 +158,10 @@ export function startStudioAgentRuntime(options: AgentRuntimeOptions) {
   }, 1000);
 
   void poll();
+
+  return {
+    update() {
+      updateAiAnimations(aiContext);
+    },
+  };
 }

@@ -2,45 +2,29 @@ import * as THREE from "three";
 import CameraControls from "camera-controls";
 import { setActiveOverlayManager } from "./overlay/OverlayService";
 import { createOverlayManager } from "./overlay/OverlayManager";
-import { SceneRegistry } from "../core/scene/SceneRegistry";
-import { SelectionManager } from "../editor/SelectionManager";
-import { createStudioCamera } from "../engine/camera/createStudioCamera";
-import { createRenderer } from "../engine/renderer/createRenderer";
-import { createScene } from "../engine/scene/createScene";
-import { createLibraryWithRegistry } from "./studioLibrary";
 import { createViewportToolbar } from "./ui/createViewportToolbar";
-import type { RecordingAspect, SceneHelper, TheatreBinding } from "./studioTypes";
+import type { RecordingAspect } from "./studioTypes";
 import type { createProductionPanel } from "./ui/createProductionPanel";
 
 CameraControls.install({ THREE });
 
-type ProductionPanelLike = ReturnType<typeof createProductionPanel> | null;
+type ProductionPanel = ReturnType<typeof createProductionPanel> | null;
 
-export type StudioBootstrapOptions = {
+type StudioViewportRuntimeOptions = {
   root: HTMLDivElement;
-  getProductionPanel: () => ProductionPanelLike;
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  renderer: THREE.WebGLRenderer;
+  getProductionPanel: () => ProductionPanel;
 };
 
-export async function createStudioBootstrap({
+export function createStudioViewportRuntime({
   root,
+  scene,
+  camera,
+  renderer,
   getProductionPanel,
-}: StudioBootstrapOptions) {
-  root.innerHTML = "";
-  root.className = "studio-shell";
-  root.dataset.workspace = "scene";
-  root.dataset.assetsOpen = "true";
-  root.dataset.inspectorOpen = "true";
-
-  const registry = new SceneRegistry();
-  const selection = new SelectionManager();
-  const scene = createScene();
-  const camera = createStudioCamera();
-  const renderer = createRenderer();
-  const clock = new THREE.Clock();
-  const helpers = new Map<string, SceneHelper>();
-  const library = await createLibraryWithRegistry();
-  const theatreBindings = new Map<string, TheatreBinding>();
-
+}: StudioViewportRuntimeOptions) {
   scene.background = new THREE.Color("#090b12");
 
   const viewport = document.createElement("div");
@@ -77,12 +61,15 @@ export async function createStudioBootstrap({
   scene.add(grid);
 
   const viewportHelpers = { grid };
+
   const viewportToolbar = createViewportToolbar({
     root,
     getGridVisible: () => viewportHelpers.grid.visible,
     setGridVisible: (visible) => {
       viewportHelpers.grid.visible = visible;
-      getProductionPanel()?.setStatus(visible ? "Grid Visible" : "Grid Hidden");
+      getProductionPanel()?.setStatus(
+        visible ? "Grid Visible" : "Grid Hidden",
+      );
     },
   });
 
@@ -128,22 +115,17 @@ export async function createStudioBootstrap({
         durationMs: 4500,
       });
     }
+
+    if (event.key === "0") {
+      overlayManager.hideTitle();
+    }
   });
 
   const ambient = new THREE.AmbientLight("#ffffff", 0.32);
-  ambient.name = "Studio Ambient";
+  ambient.name = "Ambient Light";
   scene.add(ambient);
 
   return {
-    registry,
-    selection,
-    scene,
-    camera,
-    renderer,
-    clock,
-    helpers,
-    library,
-    theatreBindings,
     viewport,
     overlayManager,
     controls,
@@ -153,3 +135,7 @@ export async function createStudioBootstrap({
     exitRecordViewportMode,
   };
 }
+
+export type StudioViewportRuntime = ReturnType<
+  typeof createStudioViewportRuntime
+>;

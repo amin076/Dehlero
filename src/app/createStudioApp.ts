@@ -1674,7 +1674,7 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
       },
     });
   }
-  startStudioAgentRuntime({
+  const studioAgentRuntime = startStudioAgentRuntime({
     scene,
     camera,
     controls,
@@ -1809,6 +1809,10 @@ export async function createStudioApp({ root }: { root: HTMLDivElement }) {
     }
 
     controls.update(delta);
+
+    // AI animations must run inside the main Dehlero render loop,
+    // after CameraControls update and before rendering.
+    studioAgentRuntime.update();
 
     helpers.forEach((helper) => helper.update());
 
