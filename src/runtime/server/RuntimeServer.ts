@@ -1,97 +1,35 @@
-import { WebSocketServer } from "ws";
-
-import { DehleroRuntime } from "../DehleroRuntime";
-import { RuntimeDispatcher } from "../protocol/RuntimeDispatcher";
-
-import type { RuntimeRequest } from "../protocol/RuntimeRequest";
+﻿import { DehleroRuntime } from "../DehleroRuntime";
 
 export class RuntimeServer {
+  private readonly runtime: DehleroRuntime;
+  private readonly port: number;
 
-    private readonly runtime: DehleroRuntime;
+  constructor(port = 4010) {
+    this.port = port;
+    this.runtime = new DehleroRuntime();
+  }
 
-    private readonly dispatcher: RuntimeDispatcher;
+  start(): void {
+    console.log("");
+    console.log("================================");
+    console.log(" Dehlero Browser Runtime Ready");
+    console.log("================================");
+    console.log("[Runtime] Browser-safe mode.");
+    console.log("[Runtime] Port requested:", this.port);
+    console.log("");
 
-    private readonly server: WebSocketServer;
+    const api = {
+      ping: () => this.runtime.ping(),
 
-    constructor(port = 4010) {
+      runProgram: async (program: unknown) =>
+        await this.runtime.runProgram(program as any),
 
-        this.runtime = new DehleroRuntime();
+      getStatus: (jobId: string) =>
+        this.runtime.getStatus(jobId),
+    };
 
-        this.dispatcher = new RuntimeDispatcher(
-            this.runtime,
-        );
+    (globalThis as any).__DEHLERO_RUNTIME__ = api;
 
-        this.server = new WebSocketServer({
-
-            port,
-
-        });
-
-    }
-
-    start() {
-
-        console.log("");
-
-        console.log("================================");
-
-        console.log(" Dehlero Runtime Started");
-
-        console.log("================================");
-
-        console.log("");
-
-        this.server.on("connection", socket => {
-
-            console.log("[Runtime] Client Connected");
-
-            socket.on("message", async raw => {
-
-                try {
-
-                    const request =
-                        JSON.parse(
-                            raw.toString(),
-                        ) as RuntimeRequest;
-
-                    const response =
-                        await this.dispatcher.dispatch(
-                            request,
-                        );
-
-                    socket.send(
-                        JSON.stringify(
-                            response,
-                        ),
-                    );
-
-                }
-
-                catch (error) {
-
-                    socket.send(
-
-                        JSON.stringify({
-
-                            id: "",
-
-                            ok: false,
-
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : "Unknown Error",
-
-                        }),
-
-                    );
-
-                }
-
-            });
-
-        });
-
-    }
-
+    console.log("[Runtime] Available as window.__DEHLERO_RUNTIME__");
+  }
 }
